@@ -1,0 +1,12 @@
+services:
+  suricata-bench:
+    build: .
+    container_name: suricata-bench
+    ports:
+      - "7007:7007"
+    volumes:
+      - ./data:/data
+    environment:
+      - FLASK_ENV=production
+      - SURICATA_PORT=7007
+    restart: unless-stopped

@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Suricata Bench</title>
+  <style>
+    :root {
+      --bg: {{ palette.bg }};
+      --panel: {{ palette.panel }};
+      --panel-alt: {{ palette.panel_alt }};
+      --accent: {{ palette.accent }};
+      --accent-soft: {{ palette.accent_soft }};
+      --text: {{ palette.text }};
+      --muted: {{ palette.muted }};
+      --border: {{ palette.border }};
+      --success: {{ palette.success }};
+      --danger: {{ palette.danger }};
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: linear-gradient(180deg, var(--bg), #13111d);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 2rem;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      backdrop-filter: blur(6px);
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--accent-soft);
+      font-weight: 700;
+    }
+
+    textarea, input[type="text"], input[type="file"], select {
+      width: 100%;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    textarea {
+      min-height: 220px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .small textarea {
+      min-height: 120px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-weight: 800;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      color: #23150a;
+    }
+
+    button.secondary {
+      background: var(--panel-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    button.ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .status {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    .results {
+      display: grid;
+      gap: 12px;
+      max-height: 78vh;
+      overflow: auto;
+    }
+
+    .alert-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-left: 6px solid var(--accent);
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin: 6px 0 10px;
+    }
+
+    code, pre {
+      background: #161320;
+      color: var(--success);
+      border-radius: 10px;
+      padding: 10px;
+      display: block;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .theme-panel {
+      padding: 14px 16px;
+    }
+
+    .theme-toolbar {
+      display: grid;
+      gap: 10px;
+    }
+
+    .theme-toolbar label {
+      margin-bottom: 6px;
+    }
+
+    .theme-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .theme-actions button {
+      padding: 10px 14px;
+    }
+
+    .preset-help {
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.25;
+    }
+
+    .swatch-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+    }
+
+    .palette-editor {
+      display: none;
+      margin-top: 8px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .palette-editor.open {
+      display: block;
+    }
+
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .palette-grid div {
+      display: grid;
+      gap: 6px;
+    }
+
+    details.diag {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    details.diag summary {
+      cursor: pointer;
+      color: var(--accent-soft);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 1100px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .results {
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <h1>Suricata Bench</h1>
+        <div class="subtitle">Upload a PCAP, toggle the free ruleset, paste your own rule, and inspect what fired.</div>
+      </div>
+      <span class="pill">Web UI on port 7007</span>
+    </div>
+
+    <div class="grid">
+      <div class="stack">
+        <div class="panel">
+          <form id="runForm" class="stack">
+            <div>
+              <label for="pcap">PCAP input</label>
+              <input id="pcap" name="pcap" type="file" accept=".pcap,.pcapng" required>
+            </div>
+
+            <div class="row">
+              <label class="toggle">
+                <input id="include_defaults" name="include_defaults" type="checkbox" checked>
+                Include free ruleset (ET Open / common free rules)
+              </label>
+              <button type="submit">Run PCAP</button>
+            </div>
+
+            <div>
+              <label for="custom_rules">Custom rule draft box</label>
+              <textarea
+                id="custom_rules"
+                name="custom_rules"
+                spellcheck="false"
+                autocorrect="off"
+                autocapitalize="off"
+                autocomplete="off"
+                placeholder='alert http any any -> any any (msg:"My test rule"; flow:to_server,established; http.uri; content:"/payload.wsf"; sid:1000001; rev:1;)'
+              ></textarea>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel small">
+          <div class="stack">
+            <div>
+              <label>Runner output</label>
+              <div id="status" class="status">Ready.</div>
+            </div>
+            <details id="diagBox" class="diag">
+              <summary>Diagnostics</summary>
+              <pre id="diagText">(none)</pre>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <label>Alerts and matched rules</label>
+          <div id="results" class="results">
+            <div class="status">No run yet.</div>
+          </div>
+        </div>
+
+        <div class="panel theme-panel">
+          <div class="theme-toolbar">
+            <div>
+              <label for="presetSelect">Theme preset</label>
+              <select id="presetSelect"></select>
+              <div class="preset-help">Pick a preset, preview it, then save it if you like it.</div>
+              <div id="presetSwatches" class="swatch-row"></div>
+            </div>
+
+            <div class="theme-actions">
+              <button class="secondary" id="applyPreset" type="button">Preview preset</button>
+              <button class="secondary" id="saveTheme" type="button">Save current theme</button>
+              <button class="ghost" id="toggleEditor" type="button">Show manual colors</button>
+            </div>
+
+            <div id="paletteEditor" class="palette-editor">
+              <div class="palette-grid" id="paletteGrid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const defaultPalette = {{ palette|tojson }};
+    let palette = { ...defaultPalette };
+
+    const presetDefinitions = {
+      "Midnight Amber": {
+        bg: "#1e1b2e",
+        panel: "#2b2740",
+        panel_alt: "#35304f",
+        accent: "#f59e0b",
+        accent_soft: "#fcd34d",
+        text: "#fef9c3",
+        muted: "#c4b5fd",
+        border: "#5b547a",
+        success: "#a7f3d0",
+        danger: "#fdba74"
+      },
+      "Slate Harbor": {
+        bg: "#222831",
+        panel: "#393E46",
+        panel_alt: "#2e343b",
+        accent: "#00ADB5",
+        accent_soft: "#95E1D3",
+        text: "#EEEEEE",
+        muted: "#C5D3E8",
+        border: "#5c6773",
+        success: "#95E1D3",
+        danger: "#F38181"
+      },
+      "Spring Citrus": {
+        bg: "#393E46",
+        panel: "#222831",
+        panel_alt: "#2c3138",
+        accent: "#FCE38A",
+        accent_soft: "#EAFFD0",
+        text: "#F6F7D7",
+        muted: "#95E1D3",
+        border: "#55606b",
+        success: "#95E1D3",
+        danger: "#F38181"
+      },
+      "Terracotta Cream": {
+        bg: "#7D5A50",
+        panel: "#6f4f46",
+        panel_alt: "#8b6457",
+        accent: "#E5B299",
+        accent_soft: "#FCDEC0",
+        text: "#FFF4E8",
+        muted: "#E5B299",
+        border: "#B4846C",
+        success: "#FCDEC0",
+        danger: "#E5B299"
+      },
+      "Royal Grape": {
+        bg: "#000000",
+        panel: "#1b1026",
+        panel_alt: "#2a1738",
+        accent: "#892CDC",
+        accent_soft: "#BC6FF1",
+        text: "#F4EFFF",
+        muted: "#BC6FF1",
+        border: "#52057B",
+        success: "#BC6FF1",
+        danger: "#FF165D"
+      },
+      "Neon Sorbet": {
+        bg: "#1a1d24",
+        panel: "#242833",
+        panel_alt: "#2f3441",
+        accent: "#FF9A00",
+        accent_soft: "#F6F7D7",
+        text: "#FFF8E8",
+        muted: "#3EC1D3",
+        border: "#4d5568",
+        success: "#3EC1D3",
+        danger: "#FF165D"
+      },
+      "Mist Garden": {
+        bg: "#566070",
+        panel: "#6b7483",
+        panel_alt: "#7f8897",
+        accent: "#FFF8DE",
+        accent_soft: "#D0E8C5",
+        text: "#F9FBFF",
+        muted: "#C5D3E8",
+        border: "#A6AEBF",
+        success: "#D0E8C5",
+        danger: "#FFF8DE"
+      }
+    };
+
+    const paletteKeys = ["bg", "panel", "panel_alt", "accent", "accent_soft", "text", "muted", "border", "success", "danger"];
+
+    const paletteGrid = document.getElementById("paletteGrid");
+    const statusBox = document.getElementById("status");
+    const resultsBox = document.getElementById("results");
+    const diagText = document.getElementById("diagText");
+    const presetSelect = document.getElementById("presetSelect");
+    const presetSwatches = document.getElementById("presetSwatches");
+    const paletteEditor = document.getElementById("paletteEditor");
+    const toggleEditorBtn = document.getElementById("toggleEditor");
+
+    function setCssVars(theme) {
+      document.documentElement.style.setProperty("--bg", theme.bg);
+      document.documentElement.style.setProperty("--panel", theme.panel);
+      document.documentElement.style.setProperty("--panel-alt", theme.panel_alt);
+      document.documentElement.style.setProperty("--accent", theme.accent);
+      document.documentElement.style.setProperty("--accent-soft", theme.accent_soft);
+      document.documentElement.style.setProperty("--text", theme.text);
+      document.documentElement.style.setProperty("--muted", theme.muted);
+      document.documentElement.style.setProperty("--border", theme.border);
+      document.documentElement.style.setProperty("--success", theme.success);
+      document.documentElement.style.setProperty("--danger", theme.danger);
+    }
+
+    function renderPaletteEditor() {
+      paletteGrid.innerHTML = "";
+      for (const key of paletteKeys) {
+        const div = document.createElement("div");
+        div.innerHTML = `<label for="pal_${key}">${key}</label><input id="pal_${key}" type="text" value="${palette[key] || ""}">`;
+        paletteGrid.appendChild(div);
+      }
+    }
+
+    function readPaletteEditor() {
+      for (const key of paletteKeys) {
+        const el = document.getElementById(`pal_${key}`);
+        if (el) {
+          palette[key] = el.value.trim();
+        }
+      }
+      setCssVars(palette);
+      renderPresetSwatches(palette);
+    }
+
+    function populatePresetSelect() {
+      presetSelect.innerHTML = "";
+      for (const name of Object.keys(presetDefinitions)) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        presetSelect.appendChild(opt);
+      }
+    }
+
+    function renderPresetSwatches(theme) {
+      presetSwatches.innerHTML = "";
+      const shown = [theme.bg, theme.panel, theme.accent, theme.accent_soft, theme.text, theme.muted];
+      for (const color of shown) {
+        const sw = document.createElement("span");
+        sw.className = "swatch";
+        sw.style.background = color;
+        sw.title = color;
+        presetSwatches.appendChild(sw);
+      }
+    }
+
+    function applyPreset(name) {
+      if (!presetDefinitions[name]) return;
+      palette = { ...presetDefinitions[name] };
+      setCssVars(palette);
+      renderPaletteEditor();
+      renderPresetSwatches(palette);
+      statusBox.textContent = `Previewing theme preset: ${name}`;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function renderResults(data) {
+      resultsBox.innerHTML = "";
+
+      if (!data.alerts || data.alerts.length === 0) {
+        resultsBox.innerHTML = `<div class="status">No alerts fired.</div>`;
+        return;
+      }
+
+      for (const alert of data.alerts) {
+        const card = document.createElement("div");
+        card.className = "alert-card";
+        card.innerHTML = `
+          <strong>${escapeHtml(alert.signature || "Alert")}</strong>
+          <div class="meta">
+            ${escapeHtml(alert.timestamp)} · ${escapeHtml(alert.src_ip)}:${escapeHtml(alert.src_port)} → ${escapeHtml(alert.dest_ip)}:${escapeHtml(alert.dest_port)} · SID ${escapeHtml(alert.sid)}
+          </div>
+          <div class="meta">Category: ${escapeHtml(alert.category || "n/a")} · Severity: ${escapeHtml(alert.severity || "n/a")}</div>
+          <label>Matched rule</label>
+          <pre>${escapeHtml(alert.matched_rule || "")}</pre>
+        `;
+        resultsBox.appendChild(card);
+      }
+    }
+
+    document.getElementById("runForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const form = new FormData();
+      const pcap = document.getElementById("pcap").files[0];
+      const includeDefaults = document.getElementById("include_defaults").checked;
+      const customRules = document.getElementById("custom_rules").value;
+
+      if (!pcap) {
+        statusBox.textContent = "Please choose a PCAP.";
+        return;
+      }
+
+      form.append("pcap", pcap);
+      form.append("include_defaults", includeDefaults ? "true" : "false");
+      form.append("custom_rules", customRules);
+
+      statusBox.textContent = "Running Suricata against the uploaded PCAP...";
+      diagText.textContent = "(running)";
+      resultsBox.innerHTML = '<div class="status">Processing...</div>';
+
+      try {
+        const resp = await fetch("/api/run", { method: "POST", body: form });
+        const data = await resp.json();
+
+        if (!resp.ok || !data.ok) {
+          statusBox.textContent = data.error || "Run failed.";
+          diagText.textContent = data.stderr || data.stdout || "(none)";
+          resultsBox.innerHTML = '<div class="status">No results to display.</div>';
+          return;
+        }
+
+        statusBox.textContent = data.status_text || `Run complete. Alerts: ${data.alert_count}`;
+        if (data.stderr_summary) {
+          diagText.textContent = JSON.stringify(data.stderr_summary, null, 2);
+        } else {
+          diagText.textContent = data.stderr || "(none)";
+        }
+
+        renderResults(data);
+      } catch (err) {
+        statusBox.textContent = `Run failed: ${err}`;
+        diagText.textContent = String(err);
+        resultsBox.innerHTML = '<div class="status">No results to display.</div>';
+      }
+    });
+
+    document.getElementById("applyPreset").addEventListener("click", () => {
+      applyPreset(presetSelect.value);
+    });
+
+    document.getElementById("saveTheme").addEventListener("click", async () => {
+      if (paletteEditor.classList.contains("open")) {
+        readPaletteEditor();
+      }
+
+      const resp = await fetch("/api/palette", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(palette)
+      });
+
+      const data = await resp.json();
+      if (data.ok) {
+        palette = { ...data.palette };
+        setCssVars(palette);
+        renderPaletteEditor();
+        renderPresetSwatches(palette);
+        statusBox.textContent = "Theme saved.";
+      }
+    });
+
+    toggleEditorBtn.addEventListener("click", () => {
+      paletteEditor.classList.toggle("open");
+      toggleEditorBtn.textContent = paletteEditor.classList.contains("open")
+        ? "Hide manual colors"
+        : "Show manual colors";
+    });
+
+    paletteGrid.addEventListener("input", () => {
+      readPaletteEditor();
+    });
+
+    populatePresetSelect();
+    renderPaletteEditor();
+    renderPresetSwatches(palette);
+    setCssVars(palette);
+  </script>
+</body>
+</html>
