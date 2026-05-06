@@ -4,7 +4,7 @@ Suricata Bench is a Docker-based web app for replaying PCAPs through Suricata an
 
 It is aimed at practical rule-development work:
 
-- test a PCAP against cached ET Open / common free rules
+- test a PCAP against cached ET Open / common free rules with the option to update the rules to current
 - paste a custom rule directly into the UI
 - isolate your custom rule from the default ruleset when needed
 - run an optional disabled-rule coverage pass for submission prep
@@ -25,14 +25,6 @@ Suricata Bench is useful when you want to answer questions like:
 - Is there already dormant or generic coverage in disabled rules?
 - What exact rule text matched this traffic?
 
-This is especially helpful for:
-
-- phishing delivery
-- suspicious downloads
-- malware staging
-- protocol anomaly testing
-- synthetic or hand-built PCAPs
-- ET Open submission prep
 
 ---
 
@@ -52,7 +44,7 @@ This project is for **offline PCAP replay and rule testing**.
 ## Features
 
 - Web UI on **port 7007**
-- Upload `.pcap` and `.pcapng` files
+- Upload `.pcap` or `.pcapng` files
 - Toggle the default ET Open / common free ruleset on or off
 - Paste a custom Suricata rule directly into the UI
 - Run a PCAP against:
@@ -77,7 +69,7 @@ This project is for **offline PCAP replay and rule testing**.
   - the active/default run
   - the disabled-rule coverage run
 - Theme presets plus manual color editing
-- Includes a Dracula preset
+
 
 ---
 
@@ -123,7 +115,7 @@ That means you get:
 - active/default coverage results
 - disabled-rule coverage results
 
-instead of one noisy combined run.
+instead of one noisy combined run. If you want the noisey combined single run, go ahead it won't break anything.
 
 ### Internal suppression of known-unloadable disabled rules
 
@@ -342,7 +334,7 @@ The PCAP is tested only against:
 
 - your pasted custom rule
 
-This is useful when you want to isolate your own rule and make sure a default ruleset is not producing the alert.
+This is useful when you want to isolate your own rule and make sure a default ruleset is not also producing an alert for the same behavior.
 
 ---
 
@@ -365,6 +357,7 @@ If the rule parses correctly and matches traffic, you should see:
 - the alert message
 - the exact matched rule text
 
+If there is a problem with the rule, you will see the error In the output.
 ---
 
 ## Recommended rule-testing workflow
@@ -386,7 +379,7 @@ This usually makes debugging much faster than jumping straight into a complex fi
 
 ## Example use cases
 
-### 1. Check whether a PCAP is already covered
+### 1. Check whether a detectection idea is already covered with a known PCAP file
 
 - leave the default ruleset enabled
 - do not paste a custom rule yet
