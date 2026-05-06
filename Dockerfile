@@ -1,36 +1,35 @@
-FROM debian:12-slim
+FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    VIRTUAL_ENV=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    suricata \
-    suricata-update \
+    software-properties-common \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
     python3 \
     python3-pip \
     python3-venv \
-    ca-certificates \
-    jq \
-    curl \
-    procps \
-    libpcre2-8-0 \
+    python3-flask \
+    python3-werkzeug \
+    && add-apt-repository -y ppa:oisf/suricata-stable \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    suricata \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/suricata-bench
 
-COPY app/requirements.txt /opt/suricata-bench/requirements.txt
-
-RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir -r /opt/suricata-bench/requirements.txt
-
 COPY app /opt/suricata-bench/app
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh /opt/suricata-bench/entrypoint.sh
+
+RUN chmod +x /opt/suricata-bench/entrypoint.sh
+
+VOLUME ["/data"]
 
 EXPOSE 7007
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/opt/suricata-bench/entrypoint.sh"]

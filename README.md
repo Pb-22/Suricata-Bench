@@ -1,47 +1,47 @@
-
 # Suricata Bench
 
-Suricata Bench is a small Docker-based web app for testing Suricata rules against PCAP files.
+Suricata Bench is a Docker-based web app for replaying PCAPs through Suricata and quickly testing rule behavior.
 
-It is meant to make rule testing easier for beginners:
+It is aimed at practical rule-development work:
 
-- upload a PCAP in a browser
-- test it against the common free Suricata rules
-- or turn those off and test only your own custom rule
-- paste a rule directly into the UI
-- see what alerted
-- see the exact rule text that matched
-- review basic diagnostics if something fails to parse
+- test a PCAP against cached ET Open / common free rules
+- paste a custom rule directly into the UI
+- isolate your custom rule from the default ruleset when needed
+- run an optional disabled-rule coverage pass for submission prep
+- inspect exactly what alerted, including matched rule text
+- review parsing and runtime diagnostics without leaving the browser
 
-The web UI runs on port **7007**.
+The web UI runs on **port 7007**.
 
 ---
 
-# What this project is for
+## What this project is for
 
 Suricata Bench is useful when you want to answer questions like:
 
-- "Will this PCAP fire any common free Suricata rules?"
-- "Does my custom rule parse correctly?"
-- "Did my rule actually fire, or did something else alert?"
-- "What exact rule matched this traffic?"
+- Will this PCAP fire any current ET Open / common free rules?
+- Does my custom rule parse correctly?
+- Did my custom rule fire, or did something else alert first?
+- Is there already dormant or generic coverage in disabled rules?
+- What exact rule text matched this traffic?
 
-This is especially helpful when you are writing or testing rules for:
+This is especially helpful for:
 
 - phishing delivery
-- suspicious payload downloads
+- suspicious downloads
 - malware staging
-- odd HTTP/TLS/DNS behavior
+- protocol anomaly testing
 - synthetic or hand-built PCAPs
+- ET Open submission prep
 
 ---
 
-# What this project is not
+## What this project is not
 
 Suricata Bench is **not**:
 
 - a live IDS/IPS deployment
-- a sensor for monitoring real network traffic continuously
+- a continuous monitoring sensor
 - a full Suricata management platform
 - a replacement for a production Suricata installation
 
@@ -49,35 +49,139 @@ This project is for **offline PCAP replay and rule testing**.
 
 ---
 
-# Features
+## Features
 
 - Web UI on **port 7007**
 - Upload `.pcap` and `.pcapng` files
-- Toggle the common free Suricata ruleset on or off
+- Toggle the default ET Open / common free ruleset on or off
 - Paste a custom Suricata rule directly into the UI
 - Run a PCAP against:
-  - the free rules only
+  - the default ruleset only
   - your custom rule only
   - both together
-- View:
-  - alerts
+- Optional **Coverage Review Mode** to test disabled `#alert` / `#drop` / `#reject` / `#pass` rules in a separate pass
+- Manual **Refresh ET Open rules** action using `suricata-update`
+- Ruleset status display showing:
+  - whether cached rules are present
+  - last refresh time
+  - refresh status
+  - cached ruleset size
+- Alert cards showing:
+  - timestamp
   - source and destination IP/port
   - SID
-  - matched rule text
-  - diagnostics and parse errors
-- Theme presets for the UI
-- Manual color editing for the theme
+  - message/category/severity
+  - exact matched rule text
+  - uncommented disabled-rule test form when applicable
+- Diagnostics for both:
+  - the active/default run
+  - the disabled-rule coverage run
+- Theme presets plus manual color editing
+- Includes a Dracula preset
 
 ---
 
-# Project layout
+## Current ruleset behavior
 
+Suricata Bench caches ET Open rules locally under `/data/rules/et-open.rules`.
+
+That means:
+
+- the first startup pulls rules if the cached rules file is missing
+- later startups reuse the cached rules
+- rules are **not** refreshed automatically on every run
+- use the **Refresh ET Open rules** button when you want the latest available rules
+
+Refresh metadata is stored in:
+
+- `/data/rules/et-open.meta.json`
+
+This is intentional: it gives you a stable local ruleset by default while still making refresh status visible.
+
+---
+
+## Coverage Review Mode
+
+Coverage Review Mode exists for one specific question:
+
+> Does ET already have active or disabled coverage for this behavior?
+
+When enabled, Suricata Bench performs a second Suricata pass using uncommented disabled rules.
+
+This is useful for:
+
+- checking dormant GPL / ET coverage before writing a new rule
+- validating whether a candidate is already covered generically
+- reviewing disabled rules during ET Open submission prep
+
+### Important behavior
+
+Coverage Review Mode is **separate** from the normal active/default ruleset run.
+
+That means you get:
+
+- active/default coverage results
+- disabled-rule coverage results
+
+instead of one noisy combined run.
+
+### Internal suppression of known-unloadable disabled rules
+
+Some disabled rules are not realistically testable in a lightweight bench run because they depend on:
+
+- unsupported app-layer parsers in the current Suricata build
+- stale app-layer event names
+- demo/example hash-list dependencies
+
+Suricata Bench suppresses those internally during the disabled-rule pass so they do not pollute coverage diagnostics unnecessarily.
+
+This suppression is dynamic for app-layer parser support and checks the running Suricata binary with:
+
+```bash
+suricata --list-app-layer-protos
 ```
+
+So if you later swap to a Suricata build that supports more parsers, those disabled rules can become testable automatically.
+
+---
+
+## Suricata build notes
+
+The container now uses **Ubuntu 22.04** with the **OISF stable PPA** so Suricata Bench can run a newer Suricata build than older distro-default packages.
+
+A practical packaging note:
+
+- the newer Suricata package already provides `suricata-update`
+- so the Dockerfile installs `suricata` directly and does **not** install a separate `suricata-update` package
+
+If you want to inspect the app-layer parsers supported by the running container:
+
+```bash
+docker compose exec suricata-bench suricata --list-app-layer-protos
+```
+
+If you want to inspect rule keyword families:
+
+```bash
+docker compose exec suricata-bench suricata --list-keywords=all
+```
+
+Important distinction:
+
+- `--list-app-layer-protos` tells you what the current Suricata binary can actually parse at the app layer
+- `--list-keywords=all` can show keyword families that do **not** guarantee parser availability
+
+For parser-dependent disabled-rule coverage, `--list-app-layer-protos` is the source of truth.
+
+---
+
+## Project layout
+
+```text
 suricata-bench/
 ├── app/
 │   ├── requirements.txt
 │   ├── server.py
-│   ├── static/
 │   └── templates/
 │       └── index.html
 ├── data/
@@ -90,153 +194,165 @@ suricata-bench/
 └── README.md
 ```
 
+`data/` is bind-mounted into the container and is intentionally used to persist:
+
+- cached ET Open rules
+- refresh metadata
+- uploaded temp files
+- run outputs
+- saved UI palette choices
+
 ---
 
-# Requirements
+## Requirements
 
 You need:
 
-* Docker
-* Docker Compose
+- Docker
+- Docker Compose
 
 On many systems, Docker Compose is available as:
 
-```
+```bash
 docker compose
 ```
 
-If that command works, you are fine.
-
 ---
 
-# Beginner installation steps
+## Quick start
 
-## 1. Put the project somewhere on your system
-
-Example:
-
-```
-/home/youruser/suricata-bench
-```
-
-## 2. Open a terminal in the project directory
+### 1. Clone or place the project somewhere on your system
 
 Example:
 
-```
-cd /home/youruser/suricata-bench
+```bash
+cd /home/youruser
 ```
 
-## 3. Build and start the container
-
+```bash
+git clone https://github.com/Pb-22/Suricata-Bench.git
 ```
+
+### 2. Enter the project directory
+
+```bash
+cd /home/youruser/Suricata-Bench
+```
+
+### 3. Build and start the app
+
+```bash
 docker compose up --build
 ```
 
-The first build may take a little while because Docker has to:
+Then open:
 
-* download the base image
-* install Suricata
-* install Python packages
-* set up the app
-
-## 4. Open the web UI
-
-In your browser, go to:
-
-```
+```text
 http://localhost:7007
 ```
 
-If you are running this on another machine or VM, replace `localhost` with that system's IP address.
+If you are running this on another machine or VM, replace `localhost` with that host’s IP.
 
 Example:
 
-```
+```text
 http://192.168.1.50:7007
 ```
 
 ---
 
-# How to stop the app
+## Stop / restart
 
-If it is running in the foreground, press:
+Stop the foreground app:
 
-```
+```bash
 Ctrl+C
 ```
 
-To stop and remove the running container in the background:
+Stop and remove the running container:
 
-```
+```bash
 docker compose down
 ```
 
----
+Start it again later:
 
-# How to start it again later
-
-From the project directory:
-
-```
+```bash
 docker compose up
 ```
 
-If you changed code or configuration and want Docker to rebuild:
+Rebuild after changing code or container configuration:
 
-```
+```bash
 docker compose up --build
 ```
 
+### Important note
+
+Use:
+
+```bash
+docker compose up
+```
+
+for the web app service.
+
+If you use `docker compose run`, Docker may show only the internal container IP and you may think the app is on the wrong interface even though the published service is fine.
+
 ---
 
-# First-use workflow
+## First-use workflow
 
 1. Start the container.
 2. Open the UI on port 7007.
-3. Choose a PCAP file.
-4. Decide whether to leave the free ruleset enabled.
-5. Paste a custom rule if you want to test one.
-6. Click **Run PCAP**.
-7. Review alerts and matched rules.
-8. Open **Diagnostics** if something did not work as expected.
+3. Optionally click **Refresh ET Open rules** if you want the newest rules instead of the cached copy.
+4. Choose a PCAP file.
+5. Decide whether to leave the free/default ruleset enabled.
+6. Optionally enable **Coverage review: test disabled #alert rules**.
+7. Paste a custom rule if you want to test one.
+8. Click **Run PCAP**.
+9. Review:
+   - active/default alerts
+   - disabled-rule coverage alerts
+   - diagnostics
+   - matched rule text
 
 ---
 
-# Using the free ruleset
+## Using the default ruleset
 
 The checkbox:
 
-```
+```text
 Include free ruleset (ET Open / common free rules)
 ```
 
-controls whether the default free rules are included in the run.
+controls whether the cached default ruleset is included.
 
-## When enabled
+### When enabled
 
 The PCAP is tested against:
 
-* the saved free rules
-* plus your pasted custom rule, if you provided one
+- the cached default ruleset
+- plus your pasted custom rule, if you provided one
 
-## When disabled
+### When disabled
 
 The PCAP is tested only against:
 
-* your pasted custom rule
+- your pasted custom rule
 
-This is very useful when you want to isolate your own rule and make sure a different ruleset is not producing the alert.
+This is useful when you want to isolate your own rule and make sure a default ruleset is not producing the alert.
 
 ---
 
-# Using a custom rule
+## Using a custom rule
 
 Paste your Suricata rule into the **Custom rule draft box**.
 
 Example:
 
-```
+```text
 alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"LOCAL suspicious URI payload extension"; flow:to_server,established; http.uri; content:".wsf"; nocase; classtype:trojan-activity; sid:9000100; rev:1;)
 ```
 
@@ -244,314 +360,126 @@ Then click **Run PCAP**.
 
 If the rule parses correctly and matches traffic, you should see:
 
-* an alert card on the right
-* the SID
-* the alert message
-* the exact matched rule text
+- an alert card
+- the SID
+- the alert message
+- the exact matched rule text
 
 ---
 
-# Recommended beginner testing method
+## Recommended rule-testing workflow
 
 If you are writing a new rule, start simple.
 
-## Good approach
+### Good approach
 
-1. Start with a very small rule that uses `content`
-2. Confirm it parses
-3. Confirm it alerts
-4. Then add more logic such as:
+1. Run the PCAP against the default ruleset first.
+2. If nothing useful fires, test a very small custom rule.
+3. Start with a simple proof rule using one sticky buffer or one cheap anchor.
+4. Confirm the proof rule matches.
+5. Add narrower conditions after you know the base detection works.
+6. Use Coverage Review Mode when you want to know whether disabled rules already cover the behavior.
 
-   * `http.host`
-   * `http.uri`
-   * `flow`
-   * `pcre`
-   * references
-   * more conditions
-
-## Why this matters
-
-If you write a large rule immediately and it fails, it is harder to tell whether the problem is:
-
-* rule syntax
-* a bad PCRE
-* the wrong buffer
-* the PCAP contents
-* or logic that is too strict
+This usually makes debugging much faster than jumping straight into a complex final rule.
 
 ---
 
-# Understanding the results
+## Example use cases
 
-## Alerts and matched rules
+### 1. Check whether a PCAP is already covered
 
-The right-side panel shows each alert that fired.
+- leave the default ruleset enabled
+- do not paste a custom rule yet
+- run the PCAP
+- inspect alerts
 
-For each alert, the UI shows:
+### 2. Test only your custom rule
 
-* alert name
-* timestamp
-* source IP and port
-* destination IP and port
-* SID
-* category
-* severity
-* matched rule text
+- disable the default ruleset
+- paste your rule
+- run the PCAP
 
-This helps you confirm whether:
+### 3. Compare active coverage vs disabled coverage
 
-* your own rule fired
-* or some other rule fired
+- enable the default ruleset
+- enable Coverage Review Mode
+- optionally paste a candidate rule
+- run the PCAP
+- compare the active/default results with the disabled-rule results
 
-## Runner output
+### 4. Refresh stale rules before testing
 
-The runner output gives a short summary such as:
-
-* how many alerts fired
-* how many rules were enabled
-* whether diagnostics found any problems
-
-## Diagnostics
-
-Open the **Diagnostics** section if something looks wrong.
-
-This is especially useful for:
-
-* signature parse errors
-* invalid PCRE syntax
-* undefined Suricata variables
-* other Suricata stderr messages
+- click **Refresh ET Open rules**
+- confirm the updated timestamp in **Ruleset status**
+- run the PCAP again
 
 ---
 
-# How to tell whether your rule actually fired
+## Health and diagnostics
 
-If your rule truly fired, you should usually see:
+The app exposes a basic health endpoint:
 
-* your message text
-* your SID
-* your exact rule text in the matched rule panel
-
-If instead you see things like:
-
-* `SID 0`
-* `Rule text not found in active ruleset`
-
-then your custom rule may not have been the thing that fired.
-
-That usually means either:
-
-* a built-in engine alert fired
-* or your custom rule failed to load and something else alerted
-
-In that case, check **Diagnostics**.
-
----
-
-# HOME_NET and EXTERNAL_NET behavior
-
-This project is set up for a simple lab-style model.
-
-`HOME_NET` is treated as RFC1918 space:
-
-* `10.0.0.0/8`
-* `172.16.0.0/12`
-* `192.168.0.0/16`
-
-`EXTERNAL_NET` is treated as:
-
-```
-!$HOME_NET
+```text
+/healthz
 ```
 
-That works well for synthetic or lab-built PCAPs where internal traffic uses private addressing and public or test-public addresses are treated as external.
+It returns JSON including:
+
+- default ruleset presence
+- ruleset status
+- palette info
+- supported app-layer protocols seen by the running Suricata binary
+
+If a run finishes too quickly or returns no alerts unexpectedly, check:
+
+- **Diagnostics** in the UI
+- the saved output under `data/output/`
+- the latest `result.json` for the run
 
 ---
 
-# Supported traffic and rule style
+## Theme notes
 
-Suricata Bench works best for PCAP testing involving things like:
+The UI supports theme presets and manual color editing.
 
-* HTTP
-* TLS
-* DNS
+A saved palette is persisted under:
 
-It is especially convenient for rule writing around:
+- `/data/palette.json`
 
-* `http.host`
-* `http.uri`
-* `content`
-* `pcre`
-* flow direction
-* delivery or staging patterns
+That means a saved palette can override later preset tweaks until you save a different palette.
 
 ---
 
-# Theme presets
+## Example commands
 
-The UI includes a compact theme preset area.
+Refresh the service after code changes:
 
-You can:
+```bash
+docker compose down && docker compose up --build
+```
 
-* preview a preset
-* save the current theme
-* open manual colors if you want to customize each color directly
+Inspect the running container logs:
 
-The custom rule box also disables browser spellcheck behavior so rules are not covered in red zigzag underlines.
+```bash
+docker compose logs --tail=120 suricata-bench
+```
+
+Inspect supported app-layer protocols:
+
+```bash
+docker compose exec suricata-bench suricata --list-app-layer-protos
+```
 
 ---
 
-# Persisted data
+## Why this project exists
 
-The `./data` directory is mounted into the container and stores:
+Rule writing gets much easier when you can answer, quickly and locally:
 
-* uploaded temp files
-* saved ET Open rules
-* last custom rules text
-* run outputs
-* saved palette settings
+- what fired
+- why it fired
+- whether the default rules already cover it
+- whether disabled rules suggest dormant coverage
+- whether your custom rule is actually the thing matching
 
----
-
-# Common troubleshooting
-
-## The page does not open
-
-Make sure the container is running:
-
-```
-docker compose up
-```
-
-Then open:
-
-```
-http://localhost:7007
-```
-
-If you are on another machine, use that machine's IP instead of `localhost`.
-
-## Docker says the port is already in use
-
-Something else is already using port 7007.
-
-You can either:
-
-* stop the other program
-* or change the port mapping in `docker-compose.yml`
-
-Example:
-
-```
-ports:
-  - "7010:7007"
-```
-
-Then open:
-
-```
-http://localhost:7010
-```
-
-## My rule does not fire
-
-Check these things in order:
-
-1. Does the rule parse with zero signature parse errors?
-2. Does the PCAP actually contain the traffic you expect?
-3. Are you matching the right buffer, such as `http.host` or `http.uri`?
-4. Is your logic too strict?
-5. Are you testing with the free rules disabled so only your custom rule is in play?
-
-## I get parse errors
-
-This usually means a syntax problem in the rule.
-
-Common causes:
-
-* malformed `pcre`
-* missing semicolon
-* bad quoting
-* invalid rule option order
-* using the wrong sticky buffer syntax
-
-Start with a smaller rule, make sure it parses, then add complexity.
-
-## I expected my custom alert, but I got something else
-
-That often means:
-
-* your custom rule did not load
-* a built-in or different rule alerted instead
-
-Check the alert SID and matched rule text, then open Diagnostics.
-
-## The free rules seem noisy
-
-That is normal for broad community rulesets.
-
-To test only your own rule:
-
-* uncheck the free ruleset checkbox
-* paste only your custom rule
-* rerun the PCAP
-
----
-
-# Suggested beginner usage examples
-
-## Example 1: test only a custom rule
-
-1. Open the UI
-2. Choose a PCAP
-3. Uncheck the free ruleset box
-4. Paste your custom rule
-5. Click **Run PCAP**
-6. Confirm that your SID and matched rule appear
-
-## Example 2: see whether community rules alert on a PCAP
-
-1. Open the UI
-2. Choose a PCAP
-3. Leave the free ruleset enabled
-4. Leave the custom rule box empty
-5. Click **Run PCAP**
-6. Review what fired
-
-## Example 3: compare custom rule vs full ruleset
-
-1. Run with only your custom rule
-2. Note the results
-3. Enable the free ruleset
-4. Run again
-5. Compare what changed
-
----
-
-# Important limitations
-
-* This is for offline PCAP replay, not live inline IPS.
-* Some rules depend on variables or datasets not included in a minimal test harness.
-* Rules that rely on external files, reputation data, or special config may need extra wiring.
-* The default config here is intentionally lightweight so you can iterate quickly.
-
----
-
-# Good future upgrades
-
-* rule file upload in addition to pasted text
-* syntax linting before run
-* show grouped results by SID
-* side-by-side compare: ET Open only vs custom only vs both
-* download button for EVE JSON
-* saved test history in SQLite
-* selected ruleset families toggle instead of all-or-nothing
-
----
-
-# License and use
-
-Use this project for testing, learning, and rule development in environments where you are authorized to analyze the traffic in the PCAPs you provide.
-
-
-
+Suricata Bench is meant to make that loop fast.
