@@ -97,12 +97,30 @@ What that means in practice:
 - the generated Suricata config explicitly enables Lua rules
 - the bench runtime creates a persistent Lua script directory at `/data/rules/lua`
 - any `.lua` files found under that directory are copied into each temporary run directory before Suricata executes
+- the UI now includes a collapsed optional Lua script panel for per-run inline scripts
 
-Recommended workflow:
+### UI workflow
 
-1. place your Lua script under `/data/rules/lua/`
-2. reference it from your Suricata rule with a path relative to the rules directory
-3. run the PCAP normally through the bench
+By default, the Lua editor stays collapsed so the interface does not look busier than necessary.
+
+When needed, you can:
+
+1. expand **Optional Lua support script**
+2. check **Use Lua script for this run** or just start typing in the Lua editor
+3. optionally expand **Filename options** to override the default `custom.lua`
+4. reference that filename from your Suricata rule with `lua:lua/<name>.lua`
+
+If you leave the filename field blank, `custom.lua` is used.
+
+Filename normalization rules:
+
+- `sample` becomes `sample.lua`
+- `Sample.LUA` becomes `sample.lua`
+- only letters, numbers, `_`, and `-` are allowed in the base name
+
+### Persistent script directory workflow
+
+If you want reusable scripts outside the inline editor, place them under `/data/rules/lua/` and reference them from your rule with a path relative to the rules directory.
 
 Example rule reference:
 
@@ -116,7 +134,7 @@ In that example, the script should exist here inside the container volume:
 /data/rules/lua/http-test.lua
 ```
 
-There is no UI toggle for Lua right now. The current design assumes that making Lua available by default is simpler than adding per-run enable/disable state, and the real operator choice is which scripts to place in the Lua directory.
+There is still no separate global on/off Lua toggle. The current design keeps Lua available by default while making the actual script entry area optional and collapsed until needed.
 
 ---
 

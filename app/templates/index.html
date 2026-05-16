@@ -292,6 +292,95 @@
  flex-wrap: wrap;
  }
 
+ .collapsible-block {
+ border: 1px solid var(--border);
+ border-radius: 14px;
+ background: rgba(255,255,255,0.03);
+ padding: 0;
+ overflow: hidden;
+ }
+
+ .collapsible-block summary {
+ cursor: pointer;
+ list-style: none;
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ gap: 12px;
+ padding: 14px 16px;
+ color: var(--accent-soft);
+ font-weight: 700;
+ }
+
+ .collapsible-block summary::-webkit-details-marker {
+ display: none;
+ }
+
+ .collapsible-content {
+ padding: 0 16px 16px;
+ display: grid;
+ gap: 12px;
+ }
+
+ .summary-inline {
+ display: inline-flex;
+ align-items: center;
+ gap: 10px;
+ color: var(--text);
+ font-weight: 600;
+ }
+
+ .chevron {
+ color: var(--muted);
+ font-size: 0.95rem;
+ }
+
+ .mini-toggle {
+ display: inline-flex;
+ align-items: center;
+ gap: 8px;
+ font-weight: 600;
+ color: var(--text);
+ }
+
+ .helper-text {
+ color: var(--muted);
+ font-size: 0.92rem;
+ line-height: 1.35;
+ }
+
+ .helper-text.error {
+ color: var(--danger);
+ }
+
+ .helper-text.success {
+ color: var(--success);
+ }
+
+ .filename-row {
+ display: grid;
+ gap: 8px;
+ }
+
+ .filename-input-wrap {
+ display: flex;
+ gap: 10px;
+ align-items: center;
+ flex-wrap: wrap;
+ }
+
+ .filename-input-wrap input[type="text"] {
+ flex: 1 1 260px;
+ }
+
+ .nested-details {
+ margin-top: 4px;
+ }
+
+ .nested-details .collapsible-content {
+ padding-top: 4px;
+ }
+
  @media (max-width: 1100px) {
  .grid {
  grid-template-columns: 1fr;
@@ -350,6 +439,49 @@
  placeholder='alert http any any -> any any (msg:"My test rule"; flow:to_server,established; http.uri; content:"/payload.wsf"; sid:1000001; rev:1;)'
  ></textarea>
  </div>
+
+ <details id="luaPanel" class="collapsible-block">
+ <summary>
+ <span class="summary-inline">Optional Lua support script</span>
+ <span class="chevron" id="luaChevron">▶</span>
+ </summary>
+ <div class="collapsible-content">
+ <label class="mini-toggle" for="use_lua">
+ <input id="use_lua" name="use_lua" type="checkbox">
+ Use Lua script for this run
+ </label>
+
+ <div>
+ <label for="lua_script">Lua script editor</label>
+ <textarea
+ id="lua_script"
+ name="lua_script"
+ spellcheck="false"
+ autocorrect="off"
+ autocapitalize="off"
+ autocomplete="off"
+ placeholder='function init(args)&#10;    local needs = {}&#10;    needs["payload"] = tostring(true)&#10;    return needs&#10;end&#10;&#10;function match(args)&#10;    return 0&#10;end'
+ ></textarea>
+ <div id="luaScriptHint" class="helper-text">Leave this collapsed unless you need a Lua-backed rule for the current run.</div>
+ </div>
+
+ <details id="luaFilenamePanel" class="collapsible-block nested-details">
+ <summary>
+ <span class="summary-inline">Filename options</span>
+ <span class="chevron" id="luaFilenameChevron">▶</span>
+ </summary>
+ <div class="collapsible-content">
+ <div class="filename-row">
+ <label for="lua_filename">Lua filename override</label>
+ <div class="filename-input-wrap">
+ <input id="lua_filename" name="lua_filename" type="text" placeholder="custom.lua" inputmode="text" autocomplete="off">
+ </div>
+ <div id="luaFilenameHint" class="helper-text">custom.lua will be used.</div>
+ </div>
+ </div>
+ </details>
+ </div>
+ </details>
  </form>
  </div>
 
@@ -543,6 +675,15 @@
  const toggleEditorBtn = document.getElementById("toggleEditor");
  const rulesetStatusBox = document.getElementById("rulesetStatus");
  const refreshRulesBtn = document.getElementById("refreshRules");
+ const luaPanel = document.getElementById("luaPanel");
+ const luaFilenamePanel = document.getElementById("luaFilenamePanel");
+ const useLuaCheckbox = document.getElementById("use_lua");
+ const luaScriptBox = document.getElementById("lua_script");
+ const luaFilenameInput = document.getElementById("lua_filename");
+ const luaFilenameHint = document.getElementById("luaFilenameHint");
+ const luaScriptHint = document.getElementById("luaScriptHint");
+ const luaChevron = document.getElementById("luaChevron");
+ const luaFilenameChevron = document.getElementById("luaFilenameChevron");
 
  function setCssVars(theme) {
  document.documentElement.style.setProperty("--bg", theme.bg);
@@ -641,6 +782,73 @@
  `Rules: ${present}\nLast refresh: ${updated}\nRefresh status: ${refreshStatus}\nSize: ${size}${message ? "\nMessage: " + message : ""}`;
  }
 
+ function setChevron(detailsEl, chevronEl) {
+ if (!detailsEl || !chevronEl) return;
+ chevronEl.textContent = detailsEl.open ? "▼" : "▶";
+ }
+
+ function normalizeLuaFilenameInput(raw) {
+ const value = String(raw || "").trim();
+
+ if (!value) {
+ return {
+ valid: true,
+ normalized: "custom.lua",
+ message: "custom.lua will be used.",
+ className: "helper-text"
+ };
+ }
+
+ if (!/^[A-Za-z0-9_-]+(?:\.lua)?$/i.test(value)) {
+ return {
+ valid: false,
+ normalized: "",
+ message: "Invalid filename. Use letters, numbers, _ or - only.",
+ className: "helper-text error"
+ };
+ }
+
+ const base = value.toLowerCase().endsWith(".lua") ? value.slice(0, -4) : value;
+ const normalized = `${base.toLowerCase()}.lua`;
+
+ return {
+ valid: true,
+ normalized,
+ message: `${normalized} will be used.`,
+ className: "helper-text success"
+ };
+ }
+
+ function refreshLuaFilenameHint() {
+ const state = normalizeLuaFilenameInput(luaFilenameInput.value);
+ luaFilenameHint.textContent = state.message;
+ luaFilenameHint.className = state.className;
+ return state;
+ }
+
+ function refreshLuaStateHints() {
+ const hasLuaText = luaScriptBox.value.trim().length > 0;
+ const scriptEnabled = useLuaCheckbox.checked || hasLuaText;
+
+ if (hasLuaText) {
+ useLuaCheckbox.checked = true;
+ luaPanel.open = true;
+ luaScriptHint.textContent = "Lua script text is present, so Lua support will be enabled for this run.";
+ luaScriptHint.className = "helper-text success";
+ } else if (useLuaCheckbox.checked) {
+ luaPanel.open = true;
+ luaScriptHint.textContent = "Lua support is enabled. Add a script here if your rule calls lua:<filename>.";
+ luaScriptHint.className = "helper-text";
+ } else {
+ luaScriptHint.textContent = "Leave this collapsed unless you need a Lua-backed rule for the current run.";
+ luaScriptHint.className = "helper-text";
+ }
+
+ setChevron(luaPanel, luaChevron);
+ setChevron(luaFilenamePanel, luaFilenameChevron);
+ return scriptEnabled;
+ }
+
  function renderAlertList(targetBox, alerts, emptyMessage, disabledMode) {
  targetBox.innerHTML = "";
 
@@ -702,10 +910,26 @@
  return;
  }
 
+ const luaFilenameState = refreshLuaFilenameHint();
+ if (!luaFilenameState.valid) {
+ statusBox.textContent = luaFilenameState.message;
+ luaPanel.open = true;
+ luaFilenamePanel.open = true;
+ setChevron(luaPanel, luaChevron);
+ setChevron(luaFilenamePanel, luaFilenameChevron);
+ return;
+ }
+
+ const hasLuaText = luaScriptBox.value.trim().length > 0;
+ const useLua = useLuaCheckbox.checked || hasLuaText;
+
  form.append("pcap", pcap);
  form.append("include_defaults", includeDefaults ? "true" : "false");
  form.append("coverage_review", coverageReview ? "true" : "false");
+ form.append("use_lua", useLua ? "true" : "false");
  form.append("custom_rules", customRules);
+ form.append("lua_script", luaScriptBox.value);
+ form.append("lua_filename", luaFilenameInput.value);
 
  statusBox.textContent = "Running Suricata against the uploaded PCAP...";
  diagText.textContent = "(running)";
@@ -813,6 +1037,30 @@
  }
  });
 
+ luaPanel.addEventListener("toggle", () => setChevron(luaPanel, luaChevron));
+ luaFilenamePanel.addEventListener("toggle", () => setChevron(luaFilenamePanel, luaFilenameChevron));
+
+ useLuaCheckbox.addEventListener("change", () => {
+ if (useLuaCheckbox.checked) {
+ luaPanel.open = true;
+ }
+ refreshLuaStateHints();
+ });
+
+ luaScriptBox.addEventListener("input", () => {
+ refreshLuaStateHints();
+ });
+
+ luaFilenameInput.addEventListener("input", () => {
+ if (luaFilenameInput.value.trim()) {
+ luaPanel.open = true;
+ luaFilenamePanel.open = true;
+ }
+ refreshLuaFilenameHint();
+ setChevron(luaPanel, luaChevron);
+ setChevron(luaFilenamePanel, luaFilenameChevron);
+ });
+
  toggleEditorBtn.addEventListener("click", () => {
  paletteEditor.classList.toggle("open");
  toggleEditorBtn.textContent = paletteEditor.classList.contains("open")
@@ -829,6 +1077,10 @@
  renderPresetSwatches(palette);
  setCssVars(palette);
  renderRulesetStatus(initialRulesetStatus);
+ refreshLuaFilenameHint();
+ refreshLuaStateHints();
+ setChevron(luaPanel, luaChevron);
+ setChevron(luaFilenamePanel, luaFilenameChevron);
  </script>
 
 </body>

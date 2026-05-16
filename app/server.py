@@ -52,6 +52,8 @@ MSG_RE = re.compile(r'msg\s*:\s*"([^"]+)"\s*;')
 UNDEFINED_VAR_RE = re.compile(r'Variable "([^"]+)" is not defined', re.IGNORECASE)
 DISABLED_RULE_RE = re.compile(r"^\s*#\s*(alert|drop|reject|pass)\s+", re.IGNORECASE)
 APP_LAYER_EVENT_RE = re.compile(r"app-layer-event\s*:\s*([A-Za-z0-9_-]+)\.", re.IGNORECASE)
+LUA_RULE_REFERENCE_RE = re.compile(r"lua\s*:\s*([A-Za-z0-9_./-]+)", re.IGNORECASE)
+LUA_FILENAME_RE = re.compile(r"^[A-Za-z0-9_-]+(?:\.lua)?$", re.IGNORECASE)
 
 SUPPORTED_APP_PROTOCOLS_CACHE = None
 
@@ -380,6 +382,54 @@ def copy_lua_support_files(temp_dir):
         copied.append(str(relative))
 
     return copied
+
+
+def normalize_lua_filename(raw_value):
+    value = (raw_value or "").strip()
+
+    if not value:
+        return True, "custom.lua", "custom.lua will be used."
+
+    if not LUA_FILENAME_RE.fullmatch(value):
+        return False, "", "Invalid filename. Use letters, numbers, _ or - only, with optional .lua at the end."
+
+    base = value[:-4] if value.lower().endswith(".lua") else value
+    normalized = f"{base.lower()}.lua"
+    return True, normalized, f"{normalized} will be used."
+
+
+def stage_inline_lua_script(temp_dir, script_text, filename):
+    if not (script_text or "").strip():
+        return ""
+
+    destination = Path(temp_dir) / "lua" / filename
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(script_text)
+    return str(destination.relative_to(Path(temp_dir)))
+
+
+def collect_lua_warnings(use_lua, script_text, normalized_filename, custom_rules):
+    warnings = []
+    script_present = bool((script_text or "").strip())
+    refs = LUA_RULE_REFERENCE_RE.findall(custom_rules or "")
+    refs_lower = [ref.strip().lower() for ref in refs if ref.strip()]
+    expected_ref = f"lua/{normalized_filename}".lower() if normalized_filename else ""
+
+    if script_present and not use_lua:
+        warnings.append("Lua script text was provided, so Lua support was enabled automatically for this run.")
+
+    if use_lua and not script_present:
+        warnings.append("Lua support was enabled, but no Lua script text was provided.")
+
+    if script_present and not refs_lower:
+        warnings.append("A Lua script was provided, but the custom rule does not reference it with lua:<filename>.")
+
+    if script_present and refs_lower and expected_ref and expected_ref not in refs_lower:
+        warnings.append(
+            f"Rule references {', '.join(refs_lower)}, but the inline Lua editor filename is {expected_ref}."
+        )
+
+    return warnings
 
 
 def build_suricata_yaml(temp_dir, rule_file_path):
@@ -770,7 +820,7 @@ def parse_eve_alerts(eve_path, rule_map):
     return alerts
 
 
-def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map):
+def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map, inline_lua_script_text="", inline_lua_filename="custom.lua"):
     if not rules_text.strip():
         return {
             "ok": False,
@@ -790,6 +840,9 @@ def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map):
     rule_file.write_text(rules_text)
 
     lua_scripts_available = copy_lua_support_files(temp_dir)
+    inline_script_relative = stage_inline_lua_script(temp_dir, inline_lua_script_text, inline_lua_filename)
+    if inline_script_relative:
+        lua_scripts_available.append(inline_script_relative)
     cfg = build_suricata_yaml(temp_dir, rule_file)
 
     cmd = [
@@ -836,6 +889,9 @@ def build_status_text(result):
         parts.append(f"Disabled-rule coverage alerts: {result.get('disabled_alert_count', 0)}")
         parts.append(f"Disabled rules tested: {result.get('disabled_rules_enabled_count', 0)}")
 
+    for warning in result.get("lua_warnings", []):
+        parts.append(f"Lua note: {warning}")
+
     stderr_summary = result.get("stderr_summary", {})
 
     parts.append("")
@@ -860,7 +916,7 @@ def build_status_text(result):
     return "\n".join(parts)
 
 
-def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_review):
+def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_review, use_lua=False, lua_script_text="", lua_filename="custom.lua"):
     run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
     run_dir = OUTPUT_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -879,6 +935,8 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
         pass_name="active",
         rules_text=rules_text,
         rule_map=rule_map,
+        inline_lua_script_text=lua_script_text if use_lua else "",
+        inline_lua_filename=lua_filename,
     )
 
     disabled_alerts = []
@@ -898,6 +956,8 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
             pass_name="disabled",
             rules_text=disabled_rules_text,
             rule_map=disabled_rule_map,
+            inline_lua_script_text=lua_script_text if use_lua else "",
+            inline_lua_filename=lua_filename,
         )
 
         disabled_alerts = disabled_result.get("alerts", [])
@@ -906,6 +966,8 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
         disabled_return_code = disabled_result.get("return_code")
         disabled_stdout = disabled_result.get("stdout", "")
         disabled_stderr = disabled_result.get("stderr", "")
+
+    lua_warnings = collect_lua_warnings(use_lua, lua_script_text, lua_filename, custom_rules)
 
     result = {
         "ok": True,
@@ -926,6 +988,12 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
         "disabled_stderr": disabled_stderr,
         "disabled_stderr_summary": disabled_stderr_summary,
         "ruleset_status": get_ruleset_status(),
+        "lua_enabled": bool(use_lua),
+        "lua_filename": lua_filename,
+        "lua_filename_message": f"{lua_filename} will be used.",
+        "lua_script_provided": bool((lua_script_text or "").strip()),
+        "lua_warnings": lua_warnings,
+        "lua_scripts_available": active_result.get("lua_scripts_available", []),
     }
 
     result["status_text"] = build_status_text(result)
@@ -965,7 +1033,17 @@ def api_rules_refresh():
 def api_run():
     include_defaults = request.form.get("include_defaults", "true").lower() == "true"
     coverage_review = request.form.get("coverage_review", "false").lower() == "true"
+    use_lua = request.form.get("use_lua", "false").lower() == "true"
     custom_rules = request.form.get("custom_rules", "")
+    lua_script_text = request.form.get("lua_script", "")
+    lua_filename_input = request.form.get("lua_filename", "")
+
+    valid_lua_name, normalized_lua_filename, lua_filename_message = normalize_lua_filename(lua_filename_input)
+    if not valid_lua_name:
+        return jsonify({"ok": False, "error": lua_filename_message}), 400
+
+    if (lua_script_text or "").strip():
+        use_lua = True
 
     file = request.files.get("pcap")
 
@@ -981,7 +1059,16 @@ def api_run():
     file.save(saved_path)
 
     try:
-        result = run_suricata_on_pcap(saved_path, include_defaults, custom_rules, coverage_review)
+        result = run_suricata_on_pcap(
+            saved_path,
+            include_defaults,
+            custom_rules,
+            coverage_review,
+            use_lua=use_lua,
+            lua_script_text=lua_script_text,
+            lua_filename=normalized_lua_filename,
+        )
+        result["lua_filename_message"] = lua_filename_message
         return jsonify(result), 200
     finally:
         if saved_path.exists():
