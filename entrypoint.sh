@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mkdir -p /data/uploads /data/rules /data/output /var/lib/suricata/rules
+mkdir -p /data/uploads /data/rules /data/rules/lua /data/output /var/lib/suricata/rules
 
 write_meta() {
   local status="$1"

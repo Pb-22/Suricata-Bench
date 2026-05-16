@@ -13,8 +13,6 @@ It is aimed at practical rule-development work:
 
 The web UI runs on **port 7007**.
 
----
-
 ## What this project is for
 
 Suricata Bench is useful when you want to answer questions like:
@@ -89,6 +87,36 @@ Refresh metadata is stored in:
 - `/data/rules/et-open.meta.json`
 
 This is intentional: it gives you a stable local ruleset by default while still making refresh status visible.
+
+## Lua support
+
+Lua support is now treated as an always-on bench capability.
+
+What that means in practice:
+
+- the generated Suricata config explicitly enables Lua rules
+- the bench runtime creates a persistent Lua script directory at `/data/rules/lua`
+- any `.lua` files found under that directory are copied into each temporary run directory before Suricata executes
+
+Recommended workflow:
+
+1. place your Lua script under `/data/rules/lua/`
+2. reference it from your Suricata rule with a path relative to the rules directory
+3. run the PCAP normally through the bench
+
+Example rule reference:
+
+```suricata
+alert http any any -> any any (msg:"LOCAL Lua HTTP test"; flow:established,to_server; lua:lua/http-test.lua; sid:9000001; rev:1;)
+```
+
+In that example, the script should exist here inside the container volume:
+
+```text
+/data/rules/lua/http-test.lua
+```
+
+There is no UI toggle for Lua right now. The current design assumes that making Lua available by default is simpler than adding per-run enable/disable state, and the real operator choice is which scripts to place in the Lua directory.
 
 ---
 

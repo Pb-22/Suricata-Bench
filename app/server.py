@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import uuid
@@ -18,6 +19,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 
 DEFAULT_RULES = RULE_DIR / "et-open.rules"
 CUSTOM_RULES = RULE_DIR / "custom.rules"
+LUA_RULE_DIR = RULE_DIR / "lua"
 META_FILE = RULE_DIR / "et-open.meta.json"
 PALETTE_FILE = BASE_DIR / "palette.json"
 
@@ -26,6 +28,7 @@ MAX_UPLOAD_MB = 250
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 RULE_DIR.mkdir(parents=True, exist_ok=True)
+LUA_RULE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
@@ -358,6 +361,27 @@ def create_support_files(temp_dir):
     write_support_file(temp_path / "filemagic.list", ["Suricata Bench Placeholder"])
 
 
+def copy_lua_support_files(temp_dir):
+    temp_path = Path(temp_dir)
+
+    if not LUA_RULE_DIR.exists():
+        return []
+
+    copied = []
+
+    for source in sorted(LUA_RULE_DIR.rglob("*.lua")):
+        if not source.is_file():
+            continue
+
+        relative = source.relative_to(RULE_DIR)
+        destination = temp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied.append(str(relative))
+
+    return copied
+
+
 def build_suricata_yaml(temp_dir, rule_file_path):
     create_support_files(temp_dir)
 
@@ -409,6 +433,10 @@ default-rule-path: {temp_dir}
 
 classification-file: /etc/suricata/classification.config
 reference-config-file: /etc/suricata/reference.config
+
+security:
+  lua:
+    allow-rules: true
 
 stats:
   enabled: no
@@ -761,6 +789,7 @@ def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map):
     rule_file = Path(temp_dir) / f"{pass_name}.rules"
     rule_file.write_text(rules_text)
 
+    lua_scripts_available = copy_lua_support_files(temp_dir)
     cfg = build_suricata_yaml(temp_dir, rule_file)
 
     cmd = [
@@ -789,6 +818,7 @@ def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map):
         "alerts": alerts,
         "alert_count": len(alerts),
         "rules_enabled_count": len(rule_map),
+        "lua_scripts_available": lua_scripts_available,
     }
 
 
@@ -797,6 +827,10 @@ def build_status_text(result):
         f"Run complete.\nAlerts: {result.get('alert_count', 0)}",
         f"Rules enabled: {result.get('rules_enabled_count', 0)}",
     ]
+
+    lua_scripts = result.get("lua_scripts_available") or []
+    if lua_scripts:
+        parts.append(f"Lua scripts available: {', '.join(lua_scripts)}")
 
     if result.get("coverage_review_enabled"):
         parts.append(f"Disabled-rule coverage alerts: {result.get('disabled_alert_count', 0)}")
