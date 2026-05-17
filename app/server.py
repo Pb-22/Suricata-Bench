@@ -398,36 +398,213 @@ def normalize_lua_filename(raw_value):
     return True, normalized, f"{normalized} will be used."
 
 
-def stage_inline_lua_script(temp_dir, script_text, filename):
-    if not (script_text or "").strip():
-        return ""
+def normalize_lua_filename_with_default(raw_value, default_index):
+    value = (raw_value or "").strip()
 
-    destination = Path(temp_dir) / "lua" / filename
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(script_text)
-    return str(destination.relative_to(Path(temp_dir)))
+    if not value:
+        normalized = f"{default_index}.lua"
+        return True, normalized, f"{normalized} will be used."
+
+    return normalize_lua_filename(value)
 
 
-def collect_lua_warnings(use_lua, script_text, normalized_filename, custom_rules):
+def parse_lua_scripts_payload(raw_payload, legacy_script_text="", legacy_filename=""):
+    scripts = []
+
+    if raw_payload:
+        try:
+            data = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            return [], [{
+                "tab_index": 1,
+                "tab_label": "Lua 1",
+                "filename": "",
+                "message": "Lua tabs payload could not be parsed as JSON.",
+                "code": "bad_json",
+            }]
+
+        if not isinstance(data, list):
+            return [], [{
+                "tab_index": 1,
+                "tab_label": "Lua 1",
+                "filename": "",
+                "message": "Lua tabs payload must be a JSON array.",
+                "code": "bad_shape",
+            }]
+
+        for idx, item in enumerate(data, start=1):
+            if not isinstance(item, dict):
+                return [], [{
+                    "tab_index": idx,
+                    "tab_label": f"Lua {idx}",
+                    "filename": "",
+                    "message": "Each Lua tab entry must be an object.",
+                    "code": "bad_item",
+                }]
+
+            scripts.append(
+                {
+                    "tab_index": idx,
+                    "tab_id": str(item.get("id") or f"lua-tab-{idx}"),
+                    "tab_label": str(item.get("label") or f"Lua {idx}"),
+                    "filename_input": str(item.get("filename") or ""),
+                    "script_text": str(item.get("script") or ""),
+                    "enabled": bool(item.get("enabled", False)),
+                }
+            )
+
+        return scripts, []
+
+    scripts.append(
+        {
+            "tab_index": 1,
+            "tab_id": "lua-tab-1",
+            "tab_label": "Lua 1",
+            "filename_input": str(legacy_filename or ""),
+            "script_text": str(legacy_script_text or ""),
+            "enabled": bool((legacy_script_text or "").strip()),
+        }
+    )
+    return scripts, []
+
+
+def validate_lua_scripts(scripts, custom_rules, use_lua):
+    errors = []
     warnings = []
-    script_present = bool((script_text or "").strip())
+    enabled_scripts = []
+    filename_to_tab = {}
+
     refs = LUA_RULE_REFERENCE_RE.findall(custom_rules or "")
     refs_lower = [ref.strip().lower() for ref in refs if ref.strip()]
-    expected_ref = f"lua/{normalized_filename}".lower() if normalized_filename else ""
+
+    if use_lua and not scripts:
+        warnings.append("Lua support was enabled, but no Lua tabs were provided.")
+
+    for idx, script in enumerate(scripts, start=1):
+        valid, normalized, message = normalize_lua_filename_with_default(
+            script.get("filename_input", ""),
+            idx,
+        )
+
+        script["normalized_filename"] = normalized
+        script["filename_message"] = message
+
+        if not valid:
+            errors.append(
+                {
+                    "tab_index": script["tab_index"],
+                    "tab_id": script["tab_id"],
+                    "tab_label": script["tab_label"],
+                    "filename": script.get("filename_input", ""),
+                    "message": message,
+                    "code": "invalid_filename",
+                }
+            )
+            continue
+
+        if not script.get("enabled"):
+            continue
+
+        if not (script.get("script_text") or "").strip():
+            errors.append(
+                {
+                    "tab_index": script["tab_index"],
+                    "tab_id": script["tab_id"],
+                    "tab_label": script["tab_label"],
+                    "filename": normalized,
+                    "message": f"Enabled Lua tab '{script['tab_label']}' ({normalized}) is empty.",
+                    "code": "empty_enabled_script",
+                }
+            )
+            continue
+
+        if normalized in filename_to_tab:
+            other = filename_to_tab[normalized]
+            errors.append(
+                {
+                    "tab_index": script["tab_index"],
+                    "tab_id": script["tab_id"],
+                    "tab_label": script["tab_label"],
+                    "filename": normalized,
+                    "message": f"Lua filename '{normalized}' is duplicated. Tabs '{other['tab_label']}' and '{script['tab_label']}' must use different filenames.",
+                    "code": "duplicate_filename",
+                }
+            )
+            continue
+
+        filename_to_tab[normalized] = script
+        enabled_scripts.append(script)
+
+    enabled_refs = {f"lua/{script['normalized_filename']}".lower(): script for script in enabled_scripts}
+
+    missing_refs = []
+    for ref in refs_lower:
+        if ref not in enabled_refs:
+            missing_refs.append(ref)
+
+    if missing_refs:
+        missing_list = ", ".join(sorted(set(missing_refs)))
+        errors.append(
+            {
+                "tab_index": None,
+                "tab_id": None,
+                "tab_label": "Rules",
+                "filename": "",
+                "message": f"Custom rules reference Lua files that are not enabled in the Lua tabs: {missing_list}",
+                "code": "missing_rule_reference",
+            }
+        )
+
+        missing_by_name = {ref.split("/", 1)[-1] for ref in missing_refs if "/" in ref}
+        for script in enabled_scripts:
+            if script["normalized_filename"].lower() in missing_by_name:
+                continue
+
+    if not refs_lower and enabled_scripts:
+        warnings.append("Enabled Lua tabs were provided, but the custom rule does not reference any lua:<filename> entries.")
+
+    for script in enabled_scripts:
+        ref = f"lua/{script['normalized_filename']}".lower()
+        if refs_lower and ref not in refs_lower:
+            warnings.append(
+                f"Enabled Lua tab '{script['tab_label']}' ({script['normalized_filename']}) is not referenced by the current custom rule."
+            )
+
+    return enabled_scripts, errors, warnings
+
+
+def stage_inline_lua_scripts(temp_dir, scripts):
+    staged = []
+
+    for script in scripts or []:
+        script_text = script.get("script_text", "")
+        filename = script.get("normalized_filename", "")
+
+        if not (script_text or "").strip() or not filename:
+            continue
+
+        destination = Path(temp_dir) / "lua" / filename
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(script_text)
+        staged.append(str(destination.relative_to(Path(temp_dir))))
+
+    return staged
+
+
+def collect_lua_warnings(use_lua, scripts, custom_rules):
+    warnings = []
+    script_present = any(bool((script.get("script_text") or "").strip()) for script in (scripts or []))
+    refs = LUA_RULE_REFERENCE_RE.findall(custom_rules or "")
+    refs_lower = [ref.strip().lower() for ref in refs if ref.strip()]
 
     if script_present and not use_lua:
         warnings.append("Lua script text was provided, so Lua support was enabled automatically for this run.")
 
     if use_lua and not script_present:
-        warnings.append("Lua support was enabled, but no Lua script text was provided.")
+        warnings.append("Lua support was enabled, but no enabled Lua tab contained script text.")
 
     if script_present and not refs_lower:
-        warnings.append("A Lua script was provided, but the custom rule does not reference it with lua:<filename>.")
-
-    if script_present and refs_lower and expected_ref and expected_ref not in refs_lower:
-        warnings.append(
-            f"Rule references {', '.join(refs_lower)}, but the inline Lua editor filename is {expected_ref}."
-        )
+        warnings.append("Lua script text was provided, but the custom rule does not reference any lua:<filename> entries.")
 
     return warnings
 
@@ -820,7 +997,7 @@ def parse_eve_alerts(eve_path, rule_map):
     return alerts
 
 
-def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map, inline_lua_script_text="", inline_lua_filename="custom.lua"):
+def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map, inline_lua_scripts=None):
     if not rules_text.strip():
         return {
             "ok": False,
@@ -840,9 +1017,7 @@ def run_suricata_pass(pcap_path, run_dir, pass_name, rules_text, rule_map, inlin
     rule_file.write_text(rules_text)
 
     lua_scripts_available = copy_lua_support_files(temp_dir)
-    inline_script_relative = stage_inline_lua_script(temp_dir, inline_lua_script_text, inline_lua_filename)
-    if inline_script_relative:
-        lua_scripts_available.append(inline_script_relative)
+    lua_scripts_available.extend(stage_inline_lua_scripts(temp_dir, inline_lua_scripts or []))
     cfg = build_suricata_yaml(temp_dir, rule_file)
 
     cmd = [
@@ -916,7 +1091,7 @@ def build_status_text(result):
     return "\n".join(parts)
 
 
-def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_review, use_lua=False, lua_script_text="", lua_filename="custom.lua"):
+def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_review, use_lua=False, lua_scripts=None):
     run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
     run_dir = OUTPUT_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -935,8 +1110,7 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
         pass_name="active",
         rules_text=rules_text,
         rule_map=rule_map,
-        inline_lua_script_text=lua_script_text if use_lua else "",
-        inline_lua_filename=lua_filename,
+        inline_lua_scripts=lua_scripts if use_lua else [],
     )
 
     disabled_alerts = []
@@ -956,8 +1130,7 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
             pass_name="disabled",
             rules_text=disabled_rules_text,
             rule_map=disabled_rule_map,
-            inline_lua_script_text=lua_script_text if use_lua else "",
-            inline_lua_filename=lua_filename,
+            inline_lua_scripts=lua_scripts if use_lua else [],
         )
 
         disabled_alerts = disabled_result.get("alerts", [])
@@ -967,7 +1140,7 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
         disabled_stdout = disabled_result.get("stdout", "")
         disabled_stderr = disabled_result.get("stderr", "")
 
-    lua_warnings = collect_lua_warnings(use_lua, lua_script_text, lua_filename, custom_rules)
+    lua_warnings = collect_lua_warnings(use_lua, lua_scripts or [], custom_rules)
 
     result = {
         "ok": True,
@@ -989,9 +1162,18 @@ def run_suricata_on_pcap(pcap_path, include_defaults, custom_rules, coverage_rev
         "disabled_stderr_summary": disabled_stderr_summary,
         "ruleset_status": get_ruleset_status(),
         "lua_enabled": bool(use_lua),
-        "lua_filename": lua_filename,
-        "lua_filename_message": f"{lua_filename} will be used.",
-        "lua_script_provided": bool((lua_script_text or "").strip()),
+        "lua_script_provided": any(bool((script.get("script_text") or "").strip()) for script in (lua_scripts or [])),
+        "lua_scripts": [
+            {
+                "tab_index": script.get("tab_index"),
+                "tab_id": script.get("tab_id"),
+                "tab_label": script.get("tab_label"),
+                "enabled": bool(script.get("enabled")),
+                "filename": script.get("normalized_filename", ""),
+                "filename_input": script.get("filename_input", ""),
+            }
+            for script in (lua_scripts or [])
+        ],
         "lua_warnings": lua_warnings,
         "lua_scripts_available": active_result.get("lua_scripts_available", []),
     }
@@ -1037,13 +1219,30 @@ def api_run():
     custom_rules = request.form.get("custom_rules", "")
     lua_script_text = request.form.get("lua_script", "")
     lua_filename_input = request.form.get("lua_filename", "")
+    lua_scripts_payload = request.form.get("lua_scripts", "")
 
-    valid_lua_name, normalized_lua_filename, lua_filename_message = normalize_lua_filename(lua_filename_input)
-    if not valid_lua_name:
-        return jsonify({"ok": False, "error": lua_filename_message}), 400
+    lua_scripts, parse_errors = parse_lua_scripts_payload(
+        lua_scripts_payload,
+        legacy_script_text=lua_script_text,
+        legacy_filename=lua_filename_input,
+    )
+    if parse_errors:
+        return jsonify({"ok": False, "error": parse_errors[0]["message"], "lua_tab_errors": parse_errors}), 400
 
-    if (lua_script_text or "").strip():
+    if any((script.get("script_text") or "").strip() for script in lua_scripts):
         use_lua = True
+
+    validated_lua_scripts, lua_tab_errors, lua_tab_warnings = validate_lua_scripts(lua_scripts, custom_rules, use_lua)
+    if lua_tab_errors:
+        return jsonify(
+            {
+                "ok": False,
+                "error": lua_tab_errors[0]["message"],
+                "lua_tab_errors": lua_tab_errors,
+                "lua_tab_warnings": lua_tab_warnings,
+            }
+        ), 400
+
 
     file = request.files.get("pcap")
 
@@ -1065,10 +1264,9 @@ def api_run():
             custom_rules,
             coverage_review,
             use_lua=use_lua,
-            lua_script_text=lua_script_text,
-            lua_filename=normalized_lua_filename,
+            lua_scripts=validated_lua_scripts,
         )
-        result["lua_filename_message"] = lua_filename_message
+        result["lua_tab_warnings"] = lua_tab_warnings
         return jsonify(result), 200
     finally:
         if saved_path.exists():

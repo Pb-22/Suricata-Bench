@@ -381,6 +381,119 @@
  padding-top: 4px;
  }
 
+ .lua-toolbar {
+ display: flex;
+ gap: 10px;
+ align-items: center;
+ justify-content: space-between;
+ flex-wrap: wrap;
+ }
+
+ .lua-summary-meta {
+ color: var(--muted);
+ font-size: 0.9rem;
+ }
+
+ .lua-tab-bar {
+ display: flex;
+ gap: 8px;
+ flex-wrap: wrap;
+ }
+
+ .lua-tab {
+ display: inline-flex;
+ align-items: center;
+ gap: 8px;
+ padding: 8px 10px;
+ border-radius: 12px;
+ border: 1px solid var(--border);
+ background: var(--panel-alt);
+ color: var(--text);
+ cursor: pointer;
+ }
+
+ .lua-tab.active {
+ border-color: var(--accent);
+ box-shadow: inset 0 0 0 1px var(--accent);
+ }
+
+ .lua-tab.bad {
+ border-color: var(--danger);
+ box-shadow: inset 0 0 0 1px var(--danger);
+ }
+
+ .lua-tab.off {
+ opacity: 0.7;
+ }
+
+ .lua-tab-name {
+ font-weight: 700;
+ }
+
+ .lua-tab-state {
+ font-size: 0.8rem;
+ color: var(--muted);
+ }
+
+ .lua-tab-close {
+ border: none;
+ background: transparent;
+ color: var(--muted);
+ cursor: pointer;
+ padding: 0 2px;
+ font-size: 0.95rem;
+ }
+
+ .lua-tab-panel {
+ border: 1px solid var(--border);
+ border-radius: 14px;
+ background: rgba(255,255,255,0.03);
+ padding: 14px;
+ display: grid;
+ gap: 12px;
+ }
+
+ .lua-tab-panel.bad {
+ border-color: var(--danger);
+ box-shadow: inset 0 0 0 1px var(--danger);
+ }
+
+ .lua-tab-header {
+ display: flex;
+ gap: 10px;
+ align-items: center;
+ justify-content: space-between;
+ flex-wrap: wrap;
+ }
+
+ .lua-tab-actions {
+ display: flex;
+ gap: 8px;
+ align-items: center;
+ flex-wrap: wrap;
+ }
+
+ .lua-errors {
+ display: grid;
+ gap: 6px;
+ }
+
+ .lua-error-item {
+ border: 1px solid var(--danger);
+ background: rgba(255,255,255,0.03);
+ border-radius: 10px;
+ padding: 10px 12px;
+ color: var(--danger);
+ }
+
+ .lua-warning-item {
+ border: 1px solid var(--accent);
+ background: rgba(255,255,255,0.03);
+ border-radius: 10px;
+ padding: 10px 12px;
+ color: var(--accent-soft);
+ }
+
  @media (max-width: 1100px) {
  .grid {
  grid-template-columns: 1fr;
@@ -442,44 +555,22 @@
 
  <details id="luaPanel" class="collapsible-block">
  <summary>
- <span class="summary-inline">Optional Lua support script</span>
+ <span class="summary-inline">Optional Lua support</span>
  <span class="chevron" id="luaChevron">▶</span>
  </summary>
  <div class="collapsible-content">
- <label class="mini-toggle" for="use_lua">
- <input id="use_lua" name="use_lua" type="checkbox">
- Use Lua script for this run
- </label>
-
+ <div class="lua-toolbar">
  <div>
- <label for="lua_script">Lua script editor</label>
- <textarea
- id="lua_script"
- name="lua_script"
- spellcheck="false"
- autocorrect="off"
- autocapitalize="off"
- autocomplete="off"
- placeholder='function init(args)&#10;    local needs = {}&#10;    needs["payload"] = tostring(true)&#10;    return needs&#10;end&#10;&#10;function match(args)&#10;    return 0&#10;end'
- ></textarea>
- <div id="luaScriptHint" class="helper-text">Leave this collapsed unless you need a Lua-backed rule for the current run.</div>
+ <div id="luaPanelSummary" class="helper-text">No Lua tabs enabled. Leave this collapsed unless your rules call lua:&lt;filename&gt;.</div>
+ </div>
+ <button class="secondary" id="addLuaTab" type="button">+ Add Lua script</button>
  </div>
 
- <details id="luaFilenamePanel" class="collapsible-block nested-details">
- <summary>
- <span class="summary-inline">Filename options</span>
- <span class="chevron" id="luaFilenameChevron">▶</span>
- </summary>
- <div class="collapsible-content">
- <div class="filename-row">
- <label for="lua_filename">Lua filename override</label>
- <div class="filename-input-wrap">
- <input id="lua_filename" name="lua_filename" type="text" placeholder="custom.lua" inputmode="text" autocomplete="off">
- </div>
- <div id="luaFilenameHint" class="helper-text">custom.lua will be used.</div>
- </div>
- </div>
- </details>
+ <div id="luaPanelErrors" class="lua-errors"></div>
+ <div id="luaPanelWarnings" class="lua-errors"></div>
+
+ <div id="luaTabs" class="lua-tab-bar"></div>
+ <div id="luaTabEditor"></div>
  </div>
  </details>
  </form>
@@ -672,18 +763,21 @@
  const presetSelect = document.getElementById("presetSelect");
  const presetSwatches = document.getElementById("presetSwatches");
  const paletteEditor = document.getElementById("paletteEditor");
- const toggleEditorBtn = document.getElementById("toggleEditor");
- const rulesetStatusBox = document.getElementById("rulesetStatus");
- const refreshRulesBtn = document.getElementById("refreshRules");
- const luaPanel = document.getElementById("luaPanel");
- const luaFilenamePanel = document.getElementById("luaFilenamePanel");
- const useLuaCheckbox = document.getElementById("use_lua");
- const luaScriptBox = document.getElementById("lua_script");
- const luaFilenameInput = document.getElementById("lua_filename");
- const luaFilenameHint = document.getElementById("luaFilenameHint");
- const luaScriptHint = document.getElementById("luaScriptHint");
+const toggleEditorBtn = document.getElementById("toggleEditor");
+const rulesetStatusBox = document.getElementById("rulesetStatus");
+const refreshRulesBtn = document.getElementById("refreshRules");
+const luaPanel = document.getElementById("luaPanel");
+const luaPanelSummary = document.getElementById("luaPanelSummary");
+const luaPanelErrors = document.getElementById("luaPanelErrors");
+const luaPanelWarnings = document.getElementById("luaPanelWarnings");
+ const luaTabsBox = document.getElementById("luaTabs");
+ const luaTabEditor = document.getElementById("luaTabEditor");
+ const addLuaTabBtn = document.getElementById("addLuaTab");
  const luaChevron = document.getElementById("luaChevron");
- const luaFilenameChevron = document.getElementById("luaFilenameChevron");
+
+ let luaTabsState = [];
+ let activeLuaTabId = null;
+ let luaIssueState = { errors: [], warnings: [] };
 
  function setCssVars(theme) {
  document.documentElement.style.setProperty("--bg", theme.bg);
@@ -787,15 +881,19 @@
  chevronEl.textContent = detailsEl.open ? "▼" : "▶";
  }
 
- function normalizeLuaFilenameInput(raw) {
+ function escapeAttr(s) {
+ return escapeHtml(String(s || "")).replaceAll('"', '&quot;');
+ }
+
+ function normalizeLuaFilenameInput(raw, defaultIndex) {
  const value = String(raw || "").trim();
 
  if (!value) {
  return {
  valid: true,
- normalized: "custom.lua",
- message: "custom.lua will be used.",
- className: "helper-text"
+ normalized: `${defaultIndex}.lua`,
+ message: `${defaultIndex}.lua will be used.`,
+ className: "helper-text success"
  };
  }
 
@@ -819,34 +917,309 @@
  };
  }
 
- function refreshLuaFilenameHint() {
- const state = normalizeLuaFilenameInput(luaFilenameInput.value);
- luaFilenameHint.textContent = state.message;
- luaFilenameHint.className = state.className;
- return state;
+ function nextLuaTabNumber() {
+ const used = new Set();
+ for (const tab of luaTabsState) {
+ const raw = String(tab.filename || "").trim().toLowerCase();
+ const match = raw.match(/^(\d+)(?:\.lua)?$/);
+ if (match) {
+ used.add(Number(match[1]));
+ }
  }
 
- function refreshLuaStateHints() {
- const hasLuaText = luaScriptBox.value.trim().length > 0;
- const scriptEnabled = useLuaCheckbox.checked || hasLuaText;
+ let candidate = 1;
+ while (used.has(candidate)) {
+ candidate += 1;
+ }
 
- if (hasLuaText) {
- useLuaCheckbox.checked = true;
- luaPanel.open = true;
- luaScriptHint.textContent = "Lua script text is present, so Lua support will be enabled for this run.";
- luaScriptHint.className = "helper-text success";
- } else if (useLuaCheckbox.checked) {
- luaPanel.open = true;
- luaScriptHint.textContent = "Lua support is enabled. Add a script here if your rule calls lua:<filename>.";
- luaScriptHint.className = "helper-text";
+ return candidate;
+ }
+
+ function createLuaTab(initial = {}) {
+ const number = initial.defaultNumber || nextLuaTabNumber();
+ return {
+ id: initial.id || `lua-tab-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+ enabled: Boolean(initial.enabled),
+ filename: initial.filename ?? `${number}.lua`,
+ script: initial.script ?? "",
+ };
+ }
+
+ function ensureLuaTabPresence() {
+ if (!luaTabsState.length) {
+ const tab = createLuaTab({ defaultNumber: 1 });
+ luaTabsState = [tab];
+ activeLuaTabId = tab.id;
+ }
+
+ if (!luaTabsState.some(tab => tab.id === activeLuaTabId)) {
+ activeLuaTabId = luaTabsState[0].id;
+ }
+ }
+
+ function getLuaValidation(customRules) {
+ const errors = [];
+ const warnings = [];
+ const byTabId = new Map();
+ const enabledByFilename = new Map();
+ const allByFilename = new Map();
+ const refs = [...String(customRules || "").matchAll(/lua\s*:\s*([A-Za-z0-9_./-]+)/ig)].map(match => String(match[1] || "").trim().toLowerCase()).filter(Boolean);
+
+ for (const [index, tab] of luaTabsState.entries()) {
+ const normalized = normalizeLuaFilenameInput(tab.filename, index + 1);
+ tab.normalizedFilename = normalized.normalized;
+ tab.filenameState = normalized;
+ allByFilename.set(`lua/${normalized.normalized}`.toLowerCase(), tab);
+
+ if (!normalized.valid) {
+ errors.push({ tabId: tab.id, filename: tab.filename, message: normalized.message, code: "invalid_filename" });
+ continue;
+ }
+
+ if (!tab.enabled) {
+ continue;
+ }
+
+ if (!String(tab.script || "").trim()) {
+ errors.push({ tabId: tab.id, filename: normalized.normalized, message: `Enabled Lua tab ${normalized.normalized} is empty.`, code: "empty_enabled_script" });
+ continue;
+ }
+
+ if (enabledByFilename.has(normalized.normalized)) {
+ const other = enabledByFilename.get(normalized.normalized);
+ errors.push({ tabId: tab.id, filename: normalized.normalized, message: `Lua filename '${normalized.normalized}' is duplicated.`, code: "duplicate_filename" });
+ errors.push({ tabId: other.id, filename: normalized.normalized, message: `Lua filename '${normalized.normalized}' is duplicated.`, code: "duplicate_filename" });
  } else {
- luaScriptHint.textContent = "Leave this collapsed unless you need a Lua-backed rule for the current run.";
- luaScriptHint.className = "helper-text";
+ enabledByFilename.set(normalized.normalized, tab);
  }
+ }
+
+ for (const ref of refs) {
+ const matchingEnabled = enabledByFilename.get(ref.replace(/^lua\//i, ""));
+ if (matchingEnabled) {
+ continue;
+ }
+
+ const matchingTab = allByFilename.get(ref);
+ if (matchingTab) {
+ errors.push({ tabId: matchingTab.id, filename: matchingTab.normalizedFilename || matchingTab.filename, message: `Rule references ${ref}, but that tab is currently disabled or empty.`, code: "referenced_disabled_tab" });
+ } else {
+ errors.push({ tabId: null, filename: ref, message: `Custom rules reference ${ref}, but no Lua tab provides that filename.`, code: "missing_rule_reference" });
+ }
+ }
+
+ if (!refs.length) {
+ const enabledCount = luaTabsState.filter(tab => tab.enabled && String(tab.script || "").trim()).length;
+ if (enabledCount > 0) {
+ warnings.push({ tabId: null, message: "Enabled Lua tabs are present, but the current custom rule does not reference any lua:<filename> entries." });
+ }
+ }
+
+ for (const tab of luaTabsState) {
+ if (!tab.enabled || !String(tab.script || "").trim() || !tab.normalizedFilename) {
+ continue;
+ }
+
+ const ref = `lua/${tab.normalizedFilename}`.toLowerCase();
+ if (refs.length && !refs.includes(ref)) {
+ warnings.push({ tabId: tab.id, message: `${tab.normalizedFilename} is enabled but not referenced by the current custom rule.` });
+ }
+ }
+
+ for (const issue of errors) {
+ if (!issue.tabId) continue;
+ if (!byTabId.has(issue.tabId)) byTabId.set(issue.tabId, { errors: [], warnings: [] });
+ byTabId.get(issue.tabId).errors.push(issue.message);
+ }
+
+ for (const issue of warnings) {
+ if (!issue.tabId) continue;
+ if (!byTabId.has(issue.tabId)) byTabId.set(issue.tabId, { errors: [], warnings: [] });
+ byTabId.get(issue.tabId).warnings.push(issue.message);
+ }
+
+ return { errors, warnings, byTabId };
+ }
+
+ function getLuaRuntimeIssues(stderrText) {
+ const errors = [];
+ const seen = new Set();
+ const text = String(stderrText || "");
+
+ for (const tab of luaTabsState) {
+ const normalized = tab.normalizedFilename || normalizeLuaFilenameInput(tab.filename, 1).normalized;
+ if (!normalized) continue;
+ const needle = `lua/${normalized}`;
+ if (text.includes(needle)) {
+ const lines = text.split("\n").map(line => line.trim()).filter(line => line.includes(needle));
+ const message = lines[0] || `Suricata reported a Lua error involving ${normalized}.`;
+ const key = `${tab.id}:${message}`;
+ if (!seen.has(key)) {
+ errors.push({ tabId: tab.id, filename: normalized, message, code: "runtime_error" });
+ seen.add(key);
+ }
+ }
+ }
+
+ return { errors, warnings: [] };
+ }
+
+ function setLuaIssueState(errors = [], warnings = []) {
+ luaIssueState = {
+ errors: (errors || []).map(issue => typeof issue === "string" ? ({ tabId: null, message: issue }) : issue),
+ warnings: (warnings || []).map(issue => typeof issue === "string" ? ({ tabId: null, message: issue }) : issue),
+ };
+ renderLuaWorkspace();
+ }
+
+ function selectFirstProblemTab(errors) {
+ const first = (errors || []).find(issue => issue.tabId);
+ if (first) {
+ activeLuaTabId = first.tabId;
+ luaPanel.open = true;
+ }
+ }
+
+ function renderLuaWorkspace() {
+ ensureLuaTabPresence();
+ const validation = getLuaValidation(document.getElementById("custom_rules").value);
+ const combinedByTab = new Map(validation.byTabId);
+
+ for (const issue of luaIssueState.errors || []) {
+ if (!issue.tabId) continue;
+ if (!combinedByTab.has(issue.tabId)) combinedByTab.set(issue.tabId, { errors: [], warnings: [] });
+ combinedByTab.get(issue.tabId).errors.push(issue.message);
+ }
+
+ for (const issue of luaIssueState.warnings || []) {
+ if (!issue.tabId) continue;
+ if (!combinedByTab.has(issue.tabId)) combinedByTab.set(issue.tabId, { errors: [], warnings: [] });
+ combinedByTab.get(issue.tabId).warnings.push(issue.message);
+ }
+
+ const panelErrors = [...validation.errors.filter(issue => !issue.tabId), ...(luaIssueState.errors || []).filter(issue => !issue.tabId)];
+ const panelWarnings = [...validation.warnings.filter(issue => !issue.tabId), ...(luaIssueState.warnings || []).filter(issue => !issue.tabId)];
+
+ const enabledCount = luaTabsState.filter(tab => tab.enabled && String(tab.script || "").trim()).length;
+ luaPanelSummary.textContent = enabledCount
+ ? `${enabledCount} Lua tab${enabledCount === 1 ? " is" : "s are"} enabled for this run.`
+ : "No Lua tabs enabled. Leave this collapsed unless your rules call lua:<filename>.";
+ luaPanelSummary.className = enabledCount ? "helper-text success" : "helper-text";
+
+ luaPanelErrors.innerHTML = panelErrors.map(issue => `<div class="lua-error-item">${escapeHtml(issue.message)}</div>`).join("");
+ luaPanelWarnings.innerHTML = panelWarnings.map(issue => `<div class="lua-warning-item">${escapeHtml(issue.message)}</div>`).join("");
+
+ luaTabsBox.innerHTML = "";
+ for (const [index, tab] of luaTabsState.entries()) {
+ const normalized = normalizeLuaFilenameInput(tab.filename, index + 1).normalized;
+ const tabIssues = combinedByTab.get(tab.id) || { errors: [], warnings: [] };
+ const btn = document.createElement("button");
+ btn.type = "button";
+ btn.className = `lua-tab${tab.id === activeLuaTabId ? " active" : ""}${tabIssues.errors.length ? " bad" : ""}${tab.enabled ? "" : " off"}`;
+ btn.innerHTML = `<span class="lua-tab-name">${escapeHtml(normalized)}</span><span class="lua-tab-state">${tab.enabled ? "on" : "off"}</span><span class="lua-tab-close" aria-hidden="true">×</span>`;
+ btn.addEventListener("click", (event) => {
+ if (event.target && event.target.classList.contains("lua-tab-close")) {
+ closeLuaTab(tab.id);
+ return;
+ }
+ activeLuaTabId = tab.id;
+ renderLuaWorkspace();
+ });
+ luaTabsBox.appendChild(btn);
+ }
+
+ const activeTab = luaTabsState.find(tab => tab.id === activeLuaTabId);
+ if (!activeTab) {
+ luaTabEditor.innerHTML = "";
+ return;
+ }
+
+ const activeIndex = luaTabsState.findIndex(tab => tab.id === activeTab.id);
+ const filenameState = normalizeLuaFilenameInput(activeTab.filename, activeIndex + 1);
+ const tabIssues = combinedByTab.get(activeTab.id) || { errors: [], warnings: [] };
+
+ luaTabEditor.innerHTML = `
+ <div class="lua-tab-panel${tabIssues.errors.length ? " bad" : ""}">
+   <div class="lua-tab-header">
+     <label class="mini-toggle"><input id="lua_tab_enabled" type="checkbox" ${activeTab.enabled ? "checked" : ""}> Enable ${escapeHtml(filenameState.normalized)} for this run</label>
+     <div class="lua-tab-actions"><button class="ghost" id="closeActiveLuaTab" type="button">Remove this tab</button></div>
+   </div>
+   <div class="filename-row">
+     <label for="lua_tab_filename">Lua filename</label>
+     <div class="filename-input-wrap"><input id="lua_tab_filename" type="text" value="${escapeAttr(activeTab.filename)}" placeholder="${activeIndex + 1}.lua" inputmode="text" autocomplete="off"></div>
+     <div class="${filenameState.className}">${escapeHtml(filenameState.message)}</div>
+   </div>
+   <div>
+     <label for="lua_tab_script">Lua script content</label>
+     <textarea id="lua_tab_script" spellcheck="false" autocorrect="off" autocapitalize="off" autocomplete="off" placeholder='function init(args)&#10;    local needs = {}&#10;    needs["payload"] = tostring(true)&#10;    return needs&#10;end&#10;&#10;function match(args)&#10;    return 0&#10;end'>${escapeHtml(activeTab.script)}</textarea>
+   </div>
+   <div class="lua-errors">
+     ${tabIssues.errors.map(message => `<div class="lua-error-item">${escapeHtml(message)}</div>`).join("")}
+     ${tabIssues.warnings.map(message => `<div class="lua-warning-item">${escapeHtml(message)}</div>`).join("")}
+   </div>
+ </div>`;
+
+ document.getElementById("lua_tab_enabled").addEventListener("change", (event) => {
+ activeTab.enabled = event.target.checked;
+ renderLuaWorkspace();
+ });
+ document.getElementById("lua_tab_filename").addEventListener("input", (event) => {
+ activeTab.filename = event.target.value;
+ renderLuaWorkspace();
+ });
+ document.getElementById("lua_tab_script").addEventListener("input", (event) => {
+ activeTab.script = event.target.value;
+ renderLuaWorkspace();
+ });
+ document.getElementById("closeActiveLuaTab").addEventListener("click", () => closeLuaTab(activeTab.id));
 
  setChevron(luaPanel, luaChevron);
- setChevron(luaFilenamePanel, luaFilenameChevron);
- return scriptEnabled;
+ }
+
+ function addLuaTab() {
+ const tab = createLuaTab();
+ luaTabsState.push(tab);
+ activeLuaTabId = tab.id;
+ luaPanel.open = true;
+ renderLuaWorkspace();
+ }
+
+ function closeLuaTab(tabId) {
+ const tab = luaTabsState.find(item => item.id === tabId);
+ if (!tab) return;
+ const hasContent = String(tab.script || "").trim() || String(tab.filename || "").trim();
+ if (hasContent && !confirm(`Remove Lua tab ${normalizeLuaFilenameInput(tab.filename, 1).normalized}?`)) {
+ return;
+ }
+ luaTabsState = luaTabsState.filter(item => item.id !== tabId);
+ if (!luaTabsState.length) {
+ luaTabsState = [createLuaTab({ defaultNumber: 1 })];
+ }
+ activeLuaTabId = luaTabsState[0].id;
+ renderLuaWorkspace();
+ }
+
+ function buildLuaFormPayload() {
+ return luaTabsState.map((tab, index) => ({
+ id: tab.id,
+ label: `Lua ${index + 1}`,
+ enabled: Boolean(tab.enabled),
+ filename: String(tab.filename || ""),
+ script: String(tab.script || ""),
+ }));
+ }
+
+ function applyLuaServerIssues(data) {
+ const errors = Array.isArray(data && data.lua_tab_errors) ? data.lua_tab_errors.map(issue => ({
+ tabId: issue.tab_id || null,
+ message: issue.message || "Lua tab error.",
+ filename: issue.filename || "",
+ code: issue.code || "server_error",
+ })) : [];
+ const warnings = Array.isArray(data && (data.lua_tab_warnings || data.lua_warnings)) ? (data.lua_tab_warnings || data.lua_warnings).map(issue => typeof issue === "string" ? ({ tabId: null, message: issue }) : ({ tabId: issue.tab_id || null, message: issue.message || "Lua warning." })) : [];
+ setLuaIssueState(errors, warnings);
+ selectFirstProblemTab(errors);
+ }
  }
 
  function renderAlertList(targetBox, alerts, emptyMessage, disabledMode) {
@@ -910,26 +1283,24 @@
  return;
  }
 
- const luaFilenameState = refreshLuaFilenameHint();
- if (!luaFilenameState.valid) {
- statusBox.textContent = luaFilenameState.message;
- luaPanel.open = true;
- luaFilenamePanel.open = true;
- setChevron(luaPanel, luaChevron);
- setChevron(luaFilenamePanel, luaFilenameChevron);
+ const luaValidation = getLuaValidation(customRules);
+ setLuaIssueState(luaValidation.errors, luaValidation.warnings);
+
+ if (luaValidation.errors.length) {
+ statusBox.textContent = luaValidation.errors[0].message;
+ selectFirstProblemTab(luaValidation.errors);
  return;
  }
 
- const hasLuaText = luaScriptBox.value.trim().length > 0;
- const useLua = useLuaCheckbox.checked || hasLuaText;
+ const luaPayload = buildLuaFormPayload();
+ const useLua = luaPayload.some(tab => tab.enabled && String(tab.script || "").trim());
 
  form.append("pcap", pcap);
  form.append("include_defaults", includeDefaults ? "true" : "false");
  form.append("coverage_review", coverageReview ? "true" : "false");
  form.append("use_lua", useLua ? "true" : "false");
  form.append("custom_rules", customRules);
- form.append("lua_script", luaScriptBox.value);
- form.append("lua_filename", luaFilenameInput.value);
+ form.append("lua_scripts", JSON.stringify(luaPayload));
 
  statusBox.textContent = "Running Suricata against the uploaded PCAP...";
  diagText.textContent = "(running)";
@@ -947,10 +1318,13 @@
  statusBox.textContent = data.error || "Run failed.";
  diagText.textContent = data.stderr || data.stdout || "(none)";
  disabledDiagText.textContent = "(not run)";
+ applyLuaServerIssues(data || {});
  resultsBox.innerHTML = '<div class="status">No results to display.</div>';
  disabledResultsBox.innerHTML = '<div class="status">No disabled-rule coverage to display.</div>';
  return;
  }
+
+ setLuaIssueState([], data.lua_tab_warnings || data.lua_warnings || []);
 
  statusBox.textContent = data.status_text || `Run complete. Alerts: ${data.alert_count}`;
 
@@ -968,6 +1342,14 @@
 
  if (data.ruleset_status) {
  renderRulesetStatus(data.ruleset_status);
+ }
+
+ if ((data.return_code && data.return_code !== 0) || (data.stderr && data.stderr.trim())) {
+ const runtimeIssues = getLuaRuntimeIssues(data.stderr || "");
+ if (runtimeIssues.errors.length) {
+ setLuaIssueState(runtimeIssues.errors, []);
+ selectFirstProblemTab(runtimeIssues.errors);
+ }
  }
 
  renderResults(data);
@@ -1038,28 +1420,8 @@
  });
 
  luaPanel.addEventListener("toggle", () => setChevron(luaPanel, luaChevron));
- luaFilenamePanel.addEventListener("toggle", () => setChevron(luaFilenamePanel, luaFilenameChevron));
-
- useLuaCheckbox.addEventListener("change", () => {
- if (useLuaCheckbox.checked) {
- luaPanel.open = true;
- }
- refreshLuaStateHints();
- });
-
- luaScriptBox.addEventListener("input", () => {
- refreshLuaStateHints();
- });
-
- luaFilenameInput.addEventListener("input", () => {
- if (luaFilenameInput.value.trim()) {
- luaPanel.open = true;
- luaFilenamePanel.open = true;
- }
- refreshLuaFilenameHint();
- setChevron(luaPanel, luaChevron);
- setChevron(luaFilenamePanel, luaFilenameChevron);
- });
+ addLuaTabBtn.addEventListener("click", addLuaTab);
+ document.getElementById("custom_rules").addEventListener("input", () => renderLuaWorkspace());
 
  toggleEditorBtn.addEventListener("click", () => {
  paletteEditor.classList.toggle("open");
@@ -1077,10 +1439,9 @@
  renderPresetSwatches(palette);
  setCssVars(palette);
  renderRulesetStatus(initialRulesetStatus);
- refreshLuaFilenameHint();
- refreshLuaStateHints();
+ ensureLuaTabPresence();
+ renderLuaWorkspace();
  setChevron(luaPanel, luaChevron);
- setChevron(luaFilenamePanel, luaFilenameChevron);
  </script>
 
 </body>
