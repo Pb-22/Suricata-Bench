@@ -217,7 +217,6 @@ For parser-dependent disabled-rule coverage, `--list-app-layer-protos` is the so
 
 ```text
 suricata-bench/
-├── addons/
 ├── app/
 │   ├── requirements.txt
 │   ├── server.py
@@ -240,8 +239,6 @@ suricata-bench/
 - uploaded temp files
 - run outputs
 - saved UI palette choices
-
-`addons/` is also mounted read-only into the container at `/addons` so example rule packs can carry helper assets such as Lua scripts.
 
 ---
 
@@ -457,3 +454,71 @@ This usually makes debugging much faster than jumping straight into a complex fi
 
 ---
 
+## Health and diagnostics
+
+The app exposes a basic health endpoint:
+
+```text
+/healthz
+```
+
+It returns JSON including:
+
+- default ruleset presence
+- ruleset status
+- palette info
+- supported app-layer protocols seen by the running Suricata binary
+
+If a run finishes too quickly or returns no alerts unexpectedly, check:
+
+- **Diagnostics** in the UI
+- the saved output under `data/output/`
+- the latest `result.json` for the run
+
+---
+
+## Theme notes
+
+The UI supports theme presets and manual color editing.
+
+A saved palette is persisted under:
+
+- `/data/palette.json`
+
+That means a saved palette can override later preset tweaks until you save a different palette.
+
+---
+
+## Example commands
+
+Refresh the service after code changes:
+
+```bash
+docker compose down && docker compose up --build
+```
+
+Inspect the running container logs:
+
+```bash
+docker compose logs --tail=120 suricata-bench
+```
+
+Inspect supported app-layer protocols:
+
+```bash
+docker compose exec suricata-bench suricata --list-app-layer-protos
+```
+
+---
+
+## Why this project exists
+
+Rule writing gets much easier when you can answer, quickly and locally:
+
+- what fired
+- why it fired
+- whether the default rules already cover it
+- whether disabled rules suggest dormant coverage
+- whether your custom rule is actually the thing matching
+
+Suricata Bench is meant to make that loop fast.
