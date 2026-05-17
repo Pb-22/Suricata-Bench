@@ -10,6 +10,7 @@ It is aimed at practical rule-development work:
 - run an optional disabled-rule coverage pass for submission prep
 - inspect exactly what alerted, including matched rule text
 - review parsing and runtime diagnostics without leaving the browser
+- use built-in Lua support for Suricata rules, including per-run inline scripts and reusable saved Lua helpers
 
 The web UI runs on **port 7007**.
 
@@ -51,6 +52,8 @@ This project is for **offline PCAP replay and rule testing**.
   - both together
 - Optional **Coverage Review Mode** to test disabled `#alert` / `#drop` / `#reject` / `#pass` rules in a separate pass
 - Manual **Refresh ET Open rules** action using `suricata-update`
+- Built-in **Lua rule support** with a persistent `/data/rules/lua/` helper directory
+- Collapsed **multi-script Lua editor** in the UI for per-run inline scripts
 - Ruleset status display showing:
   - whether cached rules are present
   - last refresh time
@@ -97,7 +100,8 @@ What that means in practice:
 - the generated Suricata config explicitly enables Lua rules
 - the bench runtime creates a persistent Lua script directory at `/data/rules/lua`
 - any `.lua` files found under that directory are copied into each temporary run directory before Suricata executes
-- the UI now includes a collapsed optional Lua script panel for per-run inline scripts
+- the UI now includes a collapsed multi-tab Lua editor for per-run inline scripts
+- the UI validates Lua filename references so it can warn when a rule calls `lua:<file>` that is not actually enabled for the run
 
 ### UI workflow
 
@@ -105,18 +109,25 @@ By default, the Lua editor stays collapsed so the interface does not look busier
 
 When needed, you can:
 
-1. expand **Optional Lua support script**
-2. check **Use Lua script for this run** or just start typing in the Lua editor
-3. optionally expand **Filename options** to override the default `custom.lua`
-4. reference that filename from your Suricata rule with `lua:lua/<name>.lua`
+1. expand **Optional Lua support scripts**
+2. add one or more Lua tabs
+3. enable the tab or tabs you want for this run
+4. give each tab a filename such as `pool-check.lua`
+5. reference those filenames from your Suricata rule with `lua:lua/<name>.lua`
 
-If you leave the filename field blank, `custom.lua` is used.
+If you leave a filename blank, the bench assigns a normalized default such as `1.lua`, `2.lua`, and so on.
 
 Filename normalization rules:
 
 - `sample` becomes `sample.lua`
 - `Sample.LUA` becomes `sample.lua`
 - only letters, numbers, `_`, and `-` are allowed in the base name
+
+The UI also helps catch a few common mistakes before you run:
+
+- Lua tabs enabled but not referenced by any rule
+- a rule references `lua:<name>` but no enabled tab matches that filename
+- duplicate or invalid Lua filenames
 
 ### Persistent script directory workflow
 
@@ -134,7 +145,7 @@ In that example, the script should exist here inside the container volume:
 /data/rules/lua/http-test.lua
 ```
 
-There is still no separate global on/off Lua toggle. The current design keeps Lua available by default while making the actual script entry area optional and collapsed until needed.
+There is still no separate global on/off Lua toggle. The current design keeps Lua available by default while making the script-entry area optional and collapsed until needed.
 
 ---
 
@@ -161,7 +172,7 @@ That means you get:
 - active/default coverage results
 - disabled-rule coverage results
 
-instead of one noisy combined run. If you want the noisey combined single run, go ahead it won't break anything.
+instead of one noisy combined run.
 
 ### Internal suppression of known-unloadable disabled rules
 
@@ -225,6 +236,7 @@ suricata-bench/
 ├── data/
 │   ├── output/
 │   ├── rules/
+│   │   └── lua/
 │   └── uploads/
 ├── docker-compose.yml
 ├── Dockerfile
